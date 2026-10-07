@@ -1,0 +1,6 @@
+/* Every symbol the eboot defines stays local; its imports from the system modules stay dynamic.
+ * This is what PS5SX2's genmap.py writes for its second link pass (ps5/genmap.py). */
+{
+local:
+  *;
+};

@@ -1,0 +1,587 @@
+// Mupen64Plus PS5 frontend: covers (fe_covers.h).
+// SPDX-License-Identifier: MIT
+
+#include "fe_covers.h"
+
+#include "fe_text.h"
+
+#include "OrbisPaths.h"
+#include "ProsperoCrash.h"
+
+#include <strings.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#include "third_party/stb_image.h"
+
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_STATIC
+#include "third_party/stb_image_resize2.h"
+
+namespace fe
+{
+namespace
+{
+constexpr int kLoadRadius = 12; // textures kept around the selection
+constexpr long kMissingRetrySeconds = 30L * 24 * 3600;
+
+const char* const kDefaultUrl =
+	"https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Nintendo_64/master/"
+	"Named_Boxarts/${name}.png";
+
+std::string CoverUrlTemplate()
+{
+	const char* env = getenv("N64PS5_COVER_URL"); // the host tests point this at a local server
+	return env && *env ? env : kDefaultUrl;
+}
+
+bool ReadFile(const std::string& path, std::vector<uint8_t>& out)
+{
+	FILE* f = fopen(path.c_str(), "rb");
+	if (!f)
+		return false;
+	out.clear();
+	uint8_t buf[65536];
+	size_t n;
+	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+	{
+		out.insert(out.end(), buf, buf + n);
+		if (out.size() > (32u << 20))
+			break;
+	}
+	fclose(f);
+	return !out.empty();
+}
+
+bool WriteFileAtomic(const std::string& path, const std::vector<uint8_t>& data)
+{
+	const std::string tmp = path + ".part";
+	FILE* f = fopen(tmp.c_str(), "wb");
+	if (!f)
+		return false;
+	const bool ok = fwrite(data.data(), 1, data.size(), f) == data.size();
+	fclose(f);
+	if (!ok || rename(tmp.c_str(), path.c_str()) != 0)
+	{
+		unlink(tmp.c_str());
+		return false;
+	}
+	return true;
+}
+
+bool IsImage(const std::vector<uint8_t>& d)
+{
+	return (d.size() > 8 && d[0] == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G') ||
+		   (d.size() > 3 && d[0] == 0xFF && d[1] == 0xD8);
+}
+
+bool NonEmptyFile(const std::string& path)
+{
+	struct stat st = {};
+	return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
+}
+
+std::string FindWithExts(const std::string& base)
+{
+	static const char* const exts[] = {".png", ".jpg", ".jpeg", ".PNG", ".JPG"};
+	for (const char* e : exts)
+		if (NonEmptyFile(base + e))
+			return base + e;
+	return "";
+}
+
+bool RecentlyMissing(const std::string& marker)
+{
+	struct stat st = {};
+	if (stat(marker.c_str(), &st) != 0)
+		return false;
+	return time(nullptr) - st.st_mtime < kMissingRetrySeconds;
+}
+
+uint32_t Pack(int r, int g, int b)
+{
+	return 0xff000000u | (uint32_t(std::clamp(b, 0, 255)) << 16) | (uint32_t(std::clamp(g, 0, 255)) << 8) |
+		   uint32_t(std::clamp(r, 0, 255));
+}
+
+// Row-major RGBA (h rows of w) -> a CoverTex with 3 levels, column-major.
+std::shared_ptr<CoverTex> MakeTex(const uint32_t* rgba, int w, int h)
+{
+	auto tex = std::make_shared<CoverTex>();
+	std::vector<uint32_t> level(rgba, rgba + size_t(w) * h);
+	int lw = w, lh = h;
+	uint64_t sr = 0, sg = 0, sb = 0;
+	for (int l = 0; l < CoverTex::kLevels; l++)
+	{
+		tex->w[l] = lw;
+		tex->h[l] = lh;
+		tex->px[l].resize(size_t(lw) * lh);
+		for (int y = 0; y < lh; y++)
+			for (int x = 0; x < lw; x++)
+				tex->px[l][size_t(x) * lh + y] = level[size_t(y) * lw + x];
+		if (l + 1 == CoverTex::kLevels)
+		{
+			for (uint32_t p : level)
+			{
+				sr += p & 0xff;
+				sg += (p >> 8) & 0xff;
+				sb += (p >> 16) & 0xff;
+			}
+			const uint64_t n = std::max<uint64_t>(1, level.size());
+			tex->average = Pack(int(sr / n), int(sg / n), int(sb / n));
+			break;
+		}
+		// 2x2 box down
+		const int nw = std::max(1, lw / 2), nh = std::max(1, lh / 2);
+		std::vector<uint32_t> next(size_t(nw) * nh);
+		for (int y = 0; y < nh; y++)
+			for (int x = 0; x < nw; x++)
+			{
+				const uint32_t* r0 = &level[size_t(std::min(2 * y, lh - 1)) * lw];
+				const uint32_t* r1 = &level[size_t(std::min(2 * y + 1, lh - 1)) * lw];
+				const int x0 = std::min(2 * x, lw - 1), x1 = std::min(2 * x + 1, lw - 1);
+				const uint32_t a = r0[x0], b = r0[x1], c = r1[x0], d = r1[x1];
+				uint32_t out = 0xff000000u;
+				for (int sh = 0; sh < 24; sh += 8)
+				{
+					const uint32_t v = (((a >> sh) & 0xff) + ((b >> sh) & 0xff) + ((c >> sh) & 0xff) + ((d >> sh) & 0xff) + 2) / 4;
+					out |= v << sh;
+				}
+				next[size_t(y) * nw + x] = out;
+			}
+		level.swap(next);
+		lw = nw;
+		lh = nh;
+	}
+	return tex;
+}
+
+std::shared_ptr<CoverTex> Decode(const std::vector<uint8_t>& file)
+{
+	int w = 0, h = 0, comp = 0;
+	stbi_uc* img = stbi_load_from_memory(file.data(), int(file.size()), &w, &h, &comp, 4);
+	if (!img || w < 8 || h < 8)
+	{
+		if (img)
+			stbi_image_free(img);
+		return nullptr;
+	}
+	// level 0: kCoverTexH tall, the art's own aspect (kept between 0.5:1 and 1.6:1)
+	const float aspect = std::clamp(float(w) / float(h), 0.5f, 1.6f);
+	const int th = kCoverTexH;
+	const int tw = int(std::lround(th * aspect)) & ~3;
+	std::vector<uint32_t> out(size_t(tw) * th);
+	stbir_resize_uint8_srgb(img, w, h, 0, reinterpret_cast<unsigned char*>(out.data()), tw, th, 0, STBIR_RGBA);
+	stbi_image_free(img);
+	for (uint32_t& p : out)
+		p |= 0xff000000u; // covers are opaque
+	return MakeTex(out.data(), tw, th);
+}
+
+std::shared_ptr<CoverTex> Placeholder(const GameInfo& g)
+{
+	const int w = 720, h = kCoverTexH;
+	std::vector<uint32_t> px(size_t(w) * h);
+	for (int y = 0; y < h; y++)
+	{
+		const float t = float(y) / h;
+		const uint32_t c = Pack(int(52 - 30 * t), int(42 - 24 * t), int(96 - 52 * t));
+		std::fill(px.begin() + size_t(y) * w, px.begin() + size_t(y + 1) * w, c);
+	}
+	// frame
+	const uint32_t edge = Pack(150, 125, 255);
+	for (int i = 0; i < 6; i++)
+		for (int x = 0; x < w; x++)
+		{
+			px[size_t(i) * w + x] = edge;
+			px[size_t(h - 1 - i) * w + x] = edge;
+		}
+	for (int y = 0; y < h; y++)
+		for (int i = 0; i < 6; i++)
+		{
+			px[size_t(y) * w + i] = edge;
+			px[size_t(y) * w + w - 1 - i] = edge;
+		}
+	// four coloured buttons, top right
+	const uint32_t dots[4] = {Pack(225, 60, 70), Pack(240, 200, 60), Pack(70, 180, 90), Pack(70, 110, 230)};
+	const int cx[4] = {w - 130, w - 95, w - 60, w - 95}, cy[4] = {80, 50, 80, 110};
+	for (int k = 0; k < 4; k++)
+		for (int y = -14; y <= 14; y++)
+			for (int x = -14; x <= 14; x++)
+				if (x * x + y * y <= 196)
+					px[size_t(cy[k] + y) * w + cx[k] + x] = dots[k];
+
+	Canvas canvas{px.data(), w, h, w};
+	// the title, word-wrapped, up to 4 lines
+	std::vector<std::string> lines;
+	std::string cur;
+	size_t pos = 0;
+	const std::string& t = g.title;
+	while (pos <= t.size())
+	{
+		size_t sp = t.find(' ', pos);
+		if (sp == std::string::npos)
+			sp = t.size();
+		const std::string word = t.substr(pos, sp - pos);
+		const std::string tryline = cur.empty() ? word : cur + " " + word;
+		if (!cur.empty() && TextWidth(tryline.c_str(), 5) > w - 80)
+		{
+			lines.push_back(cur);
+			cur = word;
+		}
+		else
+			cur = tryline;
+		pos = sp + 1;
+	}
+	if (!cur.empty())
+		lines.push_back(cur);
+	if (lines.size() > 4)
+	{
+		lines.resize(4);
+		lines[3] = FitText(lines[3] + "...", 5, w - 80);
+	}
+	int y = 190 - int(lines.size()) * 28;
+	for (const std::string& l : lines)
+	{
+		const std::string fit = FitText(l, 5, w - 80);
+		DrawTextOn(canvas, (w - TextWidth(fit.c_str(), 5)) / 2, y, fit.c_str(), 5, Pack(240, 240, 250));
+		y += 58;
+	}
+	const char* sub = "NINTENDO 64";
+	DrawTextOn(canvas, (w - TextWidth(sub, 3)) / 2, h - 80, sub, 3, Pack(170, 160, 210));
+	auto tex = MakeTex(px.data(), w, h);
+	tex->source = "placeholder";
+	return tex;
+}
+} // namespace
+
+std::string ThumbnailName(const std::string& nointro)
+{
+	std::string s = nointro;
+	for (char& c : s)
+		if (strchr("&*/:`<>?\\|\"", c))
+			c = '_';
+	return s;
+}
+
+namespace
+{
+std::atomic<bool> g_shelf_downloads{true};
+}
+
+void SetShelfDownloads(bool on)
+{
+	g_shelf_downloads = on;
+}
+
+bool ShelfDownloads()
+{
+	return g_shelf_downloads;
+}
+
+std::string CoverUrlFor(const std::string& nointro)
+{
+	std::string url = CoverUrlTemplate();
+	const size_t p = url.find("${name}");
+	if (p != std::string::npos)
+		url.replace(p, 7, UrlEncode(ThumbnailName(nointro)));
+	return url;
+}
+
+int FetchCoverUrl(Http& http, std::string url, const std::string& label, std::vector<uint8_t>& data)
+{
+	int status = http.Get(url, data);
+	// libretro-thumbnails keeps many variants as git symlinks: the "image" is then the name of the real
+	// file ("Donkey Kong Country (USA).png"), which sits in the same folder. Follow up to two of them.
+	for (int hop = 0; hop < 2 && status == 200 && !IsImage(data); hop++)
+	{
+		std::string target(data.begin(), data.end());
+		while (!target.empty() && (target.back() == '\n' || target.back() == '\r' || target.back() == ' '))
+			target.pop_back();
+		const size_t slash = target.find_last_of('/');
+		if (slash != std::string::npos)
+			target = target.substr(slash + 1);
+		if (target.empty() || data.size() > 512)
+			break;
+		const size_t dir_end = url.find_last_of('/');
+		url = url.substr(0, dir_end + 1) + UrlEncode(target);
+		OrbisLog("[covers] %s is a link to %s", label.c_str(), target.c_str());
+		status = http.Get(url, data);
+	}
+	if (status == 200 && !IsImage(data))
+		status = -3; // not an image
+	return status;
+}
+
+std::string WantedListPath()
+{
+	return OrbisDir("covers") + "/wanted.txt";
+}
+
+std::vector<WantedCover> MissingCovers(const std::vector<GameInfo>& games)
+{
+	std::vector<WantedCover> out;
+	const std::string covers = OrbisDir("covers");
+	for (const GameInfo& g : games)
+	{
+		if (g.nointro.empty())
+			continue;
+		const std::string file = ThumbnailName(g.nointro) + ".png";
+		const std::string cache = covers + "/" + file;
+		if (NonEmptyFile(cache) || RecentlyMissing(cache.substr(0, cache.size() - 4) + ".missing"))
+			continue;
+		if (!FindWithExts(covers + "/" + g.file_base).empty())
+			continue; // your own cover
+		const std::string dir = g.path.substr(0, g.path.find_last_of('/'));
+		if (!FindWithExts(dir + "/" + g.file_base).empty())
+			continue; // a cover beside the ROM
+		bool dup = false;
+		for (const WantedCover& w : out)
+			dup = dup || w.file == file;
+		if (!dup)
+			out.push_back({file, CoverUrlFor(g.nointro)});
+	}
+	return out;
+}
+
+void WriteWantedList(const std::vector<WantedCover>& wanted)
+{
+	std::string text;
+	for (const WantedCover& w : wanted)
+		text += w.file + "\t" + w.url + "\n";
+	WriteFileAtomic(WantedListPath(), std::vector<uint8_t>(text.begin(), text.end()));
+	OrbisLog("[covers] wanted list: %zu cover(s) for the next prefetch", wanted.size());
+}
+
+std::string CoverService::CachePath(int i) const
+{
+	const GameInfo& g = m_games[size_t(i)];
+	if (g.nointro.empty())
+		return "";
+	return OrbisDir("covers") + "/" + ThumbnailName(g.nointro) + ".png";
+}
+
+void CoverService::Start(const std::vector<GameInfo>& games, bool allow_download)
+{
+	Stop();
+	m_games = games;
+	m_allow_download = allow_download;
+	m_quit = false;
+	m_state.assign(games.size(), 0);
+	m_fetched.assign(games.size(), 0);
+	m_ready.clear();
+	m_downloaded = 0;
+	int need = 0;
+	if (allow_download)
+		for (size_t i = 0; i < games.size(); i++)
+		{
+			const GameInfo& g = games[i];
+			const std::string cache = CachePath(int(i));
+			if (!cache.empty() && !NonEmptyFile(cache) && !RecentlyMissing(cache.substr(0, cache.size() - 4) + ".missing") &&
+				FindWithExts(OrbisDir("covers") + "/" + g.file_base).empty())
+				need++;
+		}
+	m_to_download = need;
+	OrbisLog("[covers] %zu game(s), %d cover(s) to download%s", games.size(), need, allow_download ? "" : " (downloads off)");
+	m_thread = ps5::BigThread([this] { Run(); }, 8 * 1024 * 1024);
+}
+
+void CoverService::Stop()
+{
+	if (!m_thread.joinable())
+		return;
+	m_quit = true;
+	m_http.Abort();
+	m_wake.notify_all();
+	m_thread.join();
+	m_http.Term();
+}
+
+void CoverService::Collect(std::vector<CoverPtr>& slots, int keep_radius)
+{
+	if (slots.size() != m_games.size())
+		slots.assign(m_games.size(), nullptr);
+	std::lock_guard<std::mutex> lock(m_lock);
+	while (!m_ready.empty())
+	{
+		auto& r = m_ready.front();
+		if (r.first >= 0 && size_t(r.first) < slots.size())
+			slots[size_t(r.first)] = r.second;
+		m_ready.pop_front();
+	}
+	const int focus = m_focus;
+	for (size_t i = 0; i < slots.size(); i++)
+		if (slots[i] && std::abs(int(i) - focus) > keep_radius)
+		{
+			slots[i] = nullptr;
+			if (m_state[i] == 2)
+				m_state[i] = 0;
+		}
+}
+
+void CoverService::Refetch(int i)
+{
+	if (i < 0 || size_t(i) >= m_games.size())
+		return;
+	const std::string cache = CachePath(i);
+	if (!cache.empty())
+	{
+		unlink(cache.c_str());
+		unlink((cache.substr(0, cache.size() - 4) + ".missing").c_str());
+	}
+	std::lock_guard<std::mutex> lock(m_lock);
+	m_fetched[size_t(i)] = 0;
+	if (m_state[size_t(i)] == 2)
+		m_state[size_t(i)] = 0;
+	m_wake.notify_one();
+}
+
+bool CoverService::Download(int i)
+{
+	const GameInfo& g = m_games[size_t(i)];
+	const std::string cache = CachePath(i);
+	if (cache.empty() || m_offline)
+		return false;
+	const std::string marker = cache.substr(0, cache.size() - 4) + ".missing";
+	if (RecentlyMissing(marker))
+		return false;
+	const std::string url = CoverUrlFor(g.nointro);
+	std::vector<uint8_t> data;
+	N64_STAGE(Cover, "http get cover");
+	const int status = FetchCoverUrl(m_http, url, ThumbnailName(g.nointro), data);
+	if (status == 200)
+	{
+		WriteFileAtomic(cache, data);
+		m_downloaded++;
+		return true;
+	}
+	if (status == 404)
+	{
+		FILE* f = fopen(marker.c_str(), "w");
+		if (f)
+		{
+			fprintf(f, "%s\n", url.c_str());
+			fclose(f);
+		}
+	}
+	if (status == -1 && m_http.Offline())
+		m_offline = true;
+	return false;
+}
+
+CoverPtr CoverService::Load(int i, bool* downloaded)
+{
+	const GameInfo& g = m_games[size_t(i)];
+	*downloaded = false;
+	struct Cand
+	{
+		std::string path;
+		const char* source;
+	};
+	std::vector<Cand> cands;
+	const std::string manual = FindWithExts(OrbisDir("covers") + "/" + g.file_base);
+	if (!manual.empty())
+		cands.push_back({manual, "manual"});
+	const std::string dir = g.path.substr(0, g.path.find_last_of('/'));
+	const std::string beside = FindWithExts(dir + "/" + g.file_base);
+	if (!beside.empty())
+		cands.push_back({beside, "beside"});
+	const std::string cache = CachePath(i);
+	if (!cache.empty() && NonEmptyFile(cache))
+		cands.push_back({cache, "cache"});
+	if (cands.empty() && m_allow_download && !m_fetched[size_t(i)])
+	{
+		m_fetched[size_t(i)] = 1;
+		m_to_download = std::max(0, m_to_download - 1);
+		if (Download(i))
+		{
+			cands.push_back({cache, "download"});
+			*downloaded = true;
+		}
+	}
+	for (const Cand& c : cands)
+	{
+		std::vector<uint8_t> file;
+		if (!ReadFile(c.path, file))
+			continue;
+		N64_STAGE(Cover, "decode image");
+		auto tex = Decode(file);
+		if (tex)
+		{
+			tex->real = true;
+			tex->source = c.source;
+			return tex;
+		}
+		OrbisLog("[covers] can't decode %s", c.path.c_str());
+	}
+	return Placeholder(g);
+}
+
+void CoverService::Run()
+{
+	std::unique_lock<std::mutex> lock(m_lock);
+	while (!m_quit)
+	{
+		const int focus = m_focus;
+		int best = -1;
+		for (int i = std::max(0, focus - kLoadRadius); i <= std::min(int(m_games.size()) - 1, focus + kLoadRadius); i++)
+			if (m_state[size_t(i)] == 0 && (best < 0 || std::abs(i - focus) < std::abs(best - focus)))
+				best = i;
+		if (best >= 0)
+		{
+			m_state[size_t(best)] = 1;
+			lock.unlock();
+			static char st[48]; // one cover worker: a lasting buffer the crash handler can read
+			snprintf(st, sizeof(st), "load cover %d/%zu", best, m_games.size());
+			N64_STAGE(Cover, st);
+			bool dl = false;
+			CoverPtr tex = Load(best, &dl);
+			N64_STAGE(Cover, "idle");
+			lock.lock();
+			if (m_state[size_t(best)] == 1)
+			{
+				m_ready.emplace_back(best, tex);
+				m_state[size_t(best)] = 2;
+			}
+			continue;
+		}
+		// Everything near the selection is loaded: fetch the rest of the library to disk, nearest first.
+		int fetch = -1;
+		if (m_allow_download && !m_offline)
+			for (size_t d = 0; d < m_games.size() && fetch < 0; d++)
+				for (int sgn = -1; sgn <= 1 && fetch < 0; sgn += 2)
+				{
+					const long i = long(focus) + sgn * long(d);
+					if (i < 0 || size_t(i) >= m_games.size() || m_fetched[size_t(i)])
+						continue;
+					m_fetched[size_t(i)] = 1;
+					const GameInfo& g = m_games[size_t(i)];
+					const std::string cache = CachePath(int(i));
+					if (cache.empty() || NonEmptyFile(cache) || !FindWithExts(OrbisDir("covers") + "/" + g.file_base).empty())
+						continue;
+					fetch = int(i);
+				}
+		if (fetch >= 0)
+		{
+			lock.unlock();
+			m_to_download = std::max(0, m_to_download - 1);
+			Download(fetch);
+			lock.lock();
+			continue;
+		}
+		m_wake.wait_for(lock, std::chrono::milliseconds(250));
+	}
+}
+} // namespace fe

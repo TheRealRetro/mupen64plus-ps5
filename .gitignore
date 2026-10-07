@@ -1,0 +1,25 @@
+# Build output
+build-native/
+ps5/build/
+ps5/proto/native/build/
+*.o
+
+# ROMs and save data never belong in the repository
+*.z64
+*.n64
+*.v64
+*.rom
+
+# Local notes
+forum/
+
+# Never commit a GitHub token
+github-token.txt
+
+# Editor / OS files
+.vscode/
+.vs/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
