@@ -55,7 +55,9 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
 
 	$local = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-	$remote = & $gh api "repos/$repo/releases/tags/$cv" --jq ".assets[] | select(.name==`"$title.zip`") | .digest"
+	# parsed here: PowerShell 5.1 strips the quotes a --jq filter would need
+	$release = (& $gh api "repos/$repo/releases/tags/$cv") -join "`n" | ConvertFrom-Json
+	$remote = ($release.assets | Where-Object { $_.name -eq "$title.zip" }).digest
 	if ($remote -ne "sha256:$local") { throw "GitHub's digest '$remote' doesn't match the local zip (sha256:$local)" }
 	Write-Host "Done: https://github.com/$repo/releases/tag/$cv (sha256 $local)"
 	Write-Host 'Consoles running an older version will offer it the next time Mupen64Plus PS5 starts.'
