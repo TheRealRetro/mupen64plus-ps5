@@ -4,6 +4,8 @@
 a game shelf with box art, DualSense support with rumble, save states, and the x86-64 dynarec, so games like
 GoldenEye 007 and Donkey Kong 64 run at full speed.
 
+![The game shelf on the PS5](docs/screenshot-shelf.jpg)
+
 Title ID `PPSA99064`. No games are included: use ROMs you dumped yourself.
 
 ## Install
