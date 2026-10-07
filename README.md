@@ -43,7 +43,8 @@ release.bat                   build and publish a GitHub release
 
 Releasing:
 
-1. Raise `VERSION` in `ps5/Makefile`. The release tag is the matching `contentVersion` (0.7.0 → `00.007.000`).
+1. Raise `VERSION` in `ps5/Makefile`, and set the matching `contentVersion` in `ps5/app/sce_sys/param.json`
+   (0.7.0 → `00.007.000`; the build stops if they differ). That number is also the release tag.
 2. Write `release-notes/<contentVersion>.md`: a few short lines, shown on the console in the update question.
 3. Commit and push, then run `release.bat`. It builds, creates the release with `PPSA99064.zip`, and checks
    GitHub's digest against the local zip.

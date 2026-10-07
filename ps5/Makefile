@@ -32,8 +32,9 @@
 PS5_PAYLOAD_SDK ?= /opt/ps5-payload-sdk
 PS5_HOST ?= ps5
 PS5_PORT ?= 9021
-VERSION ?= 0.6.0
-# param.json's contentVersion, NN.NNN.NNN (0.6.0 -> 00.006.000): the release tag, as in the Homebrew Browser
+VERSION ?= 0.6.1
+# param.json's contentVersion, NN.NNN.NNN (0.6.1 -> 00.006.001): the release tag, as in the Homebrew Browser; it
+# must also be written in app/sce_sys/param.json (checked below)
 CONTENT_VERSION := $(shell echo $(VERSION) | awk -F. '{printf "%02d.%03d.%03d", $$1, $$2, $$3}')
 TITLE_ID ?= PPSA99064
 # where the app looks for updates (fe_update.h) and `make release` publishes
@@ -352,9 +353,12 @@ $(APP_OUT)/eboot.bin: build/app/eboot.elf $(NATIVE_TOOL)
 	$(NATIVE_TOOL) self --sign --in $< --out $@ --magic 0x1D3D154F
 	$(NATIVE_TOOL) self --inspect --file $@
 
+# app/sce_sys/param.json is committed with the contentVersion the release ships: the homebrew.page catalog reads
+# it from the repository at the release tag. It must match VERSION; the build stops when it doesn't.
 $(APP_OUT)/sce_sys/param.json: app/sce_sys/param.json $(VERSION_STAMP)
 	@mkdir -p $(dir $@)
-	sed 's/PPSA99064/$(TITLE_ID)/g; s/"contentVersion": "[0-9.]*"/"contentVersion": "$(CONTENT_VERSION)"/' $< > $@
+	@grep -q '"contentVersion": "$(CONTENT_VERSION)"' $< || 		{ echo "app/sce_sys/param.json: set \"contentVersion\" to \"$(CONTENT_VERSION)\" (VERSION $(VERSION))" >&2; exit 1; }
+	sed 's/PPSA99064/$(TITLE_ID)/g' $< > $@
 
 $(APP_OUT)/sce_sys/%.png: app/sce_sys/%.png
 	@mkdir -p $(dir $@)
