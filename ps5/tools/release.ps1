@@ -43,8 +43,12 @@ try {
 	$ahead = git rev-list --count origin/main..HEAD
 	if ([int]$ahead -gt 0) { throw "push your commits first (git push): $ahead not on GitHub" }
 
-	& $gh release view $cv --repo $repo *> $null
-	if ($LASTEXITCODE -eq 0) { throw "release $cv already exists: raise VERSION in ps5\Makefile" }
+	# "release not found" on stderr is the expected answer: PowerShell 5.1 would make it fatal under 'Stop'
+	$ErrorActionPreference = 'Continue'
+	& $gh release view $cv --repo $repo 2>&1 | Out-Null
+	$exists = $LASTEXITCODE -eq 0
+	$ErrorActionPreference = 'Stop'
+	if ($exists) { throw "release $cv already exists: raise VERSION in ps5\Makefile" }
 
 	Write-Host "Publishing Mupen64Plus PS5 $version (tag $cv) to $repo"
 	& $gh release create $cv $zip --repo $repo --target main --title "Mupen64Plus PS5 $version" --notes-file $notes
