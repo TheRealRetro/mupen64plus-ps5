@@ -59,6 +59,6 @@ try {
 	$remote = ($release.assets | Where-Object { $_.name -eq $asset }).digest
 	if ($remote -ne "sha256:$local") { throw "GitHub's digest '$remote' doesn't match the local zip (sha256:$local)" }
 	Write-Host "Done: https://github.com/$repo/releases/tag/$cv (sha256 $local)"
-	Write-Host 'Consoles running an older version will offer it the next time Mupen64Plus PS5 starts.'
+	Write-Host 'Consoles on 0.6.3 or newer will offer it the next time Mupen64Plus PS5 starts.'
 }
 finally { Pop-Location }
