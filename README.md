@@ -49,7 +49,8 @@ For a crash or a bug, please [open an issue](../../issues) and attach `/data/mup
 ```
 build-native.bat              build-native\PPSA99064\ + PPSA99064.zip (+ .debug.elf)
 build-native.bat Ffpfsc       also a compressed .ffpfsc image
-release.bat                   build and publish a GitHub release
+build-native.bat Clean        from scratch (nothing reused from earlier builds)
+release.bat                   clean build, then publish a GitHub release
 ```
 
 Releasing:

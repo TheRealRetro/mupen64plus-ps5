@@ -1,6 +1,7 @@
 # release.ps1 - publishes a Mupen64Plus PS5 release on GitHub (run from Windows: release.bat).
 #
-#   1. builds the app (build-native.bat): build-native\PPSA99064\ and PPSA99064.zip;
+#   1. builds the app from scratch (build-native.bat Clean): build-native\PPSA99064\ and PPSA99064.zip. Always
+#      clean: 0.6.1 was published from an incremental build that didn't start on the console;
 #   2. checks that everything is committed and pushed, that release-notes\<contentVersion>.md exists and that
 #      the tag isn't taken;
 #   3. creates the GitHub release: tag = contentVersion (NN.NNN.NNN, from VERSION in ps5\Makefile), asset
@@ -11,7 +12,6 @@
 #
 # Needs the GitHub CLI, signed in (gh auth login). Never reuse or lower a version: the app offers a release
 # only when its tag is higher than its own contentVersion.
-param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -23,10 +23,8 @@ if (-not (Test-Path $gh)) { throw 'GitHub CLI not found: winget install GitHub.c
 
 Push-Location $root
 try {
-	if (-not $SkipBuild) {
-		& cmd /c "`"$root\build-native.bat`""
-		if ($LASTEXITCODE -ne 0) { throw 'build failed' }
-	}
+	& cmd /c "`"$root\build-native.bat`" Clean"
+	if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 	$zip = Join-Path $root "build-native\$title.zip"
 	$param = Get-Content (Join-Path $root "build-native\$title\sce_sys\param.json") -Raw | ConvertFrom-Json
 	$cv = $param.contentVersion
