@@ -31,6 +31,15 @@ The app checks this repository's latest release each time it starts. When a newe
 **✕ Update now / ○ Later**. On ✕ it writes the new files over its own folder and restarts. Saves, states,
 covers and settings in `/data/mupen64plus` are kept. **Settings → Check for updates** turns the question off.
 
+## Compatibility
+
+- **[Compatibility list](https://docs.google.com/spreadsheets/d/1pG4Q9ak2Dvk1NCPW6V4FWWfJlXUoo6Joa0t7vGNlw30/edit)**:
+  how each tested game runs (public, view-only).
+- **[Report a game](https://forms.gle/mTbQapQjTWB11xbT7)**: tested one? A short form, no account needed.
+  Reports go straight into the list.
+
+For a crash or a bug, please [open an issue](../../issues) and attach `/data/mupen64plus/logs/boot.log`.
+
 ## Documentation
 
 [ps5/README.md](ps5/README.md): controls, settings, folders, how the port works, and building.
