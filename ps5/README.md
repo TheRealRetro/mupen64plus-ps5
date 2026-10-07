@@ -15,7 +15,13 @@ its files): no payload to send.
 The PS5 layer and the build come from **Snes9x PS5** (`../../snes9xPS5-2.0/ps5`), which follows the PS5SX2
 model.
 
-> **0.6:** released as the app folder (`PPSA99064.zip`): copy `PPSA99064/` to
+> **0.6.3:** in-app updates work. Up to 0.6.2 the updater wrote the new files without execute permission, so
+> the console refused to start the updated app ("Can't start the game or app", CE-107750-0). 0.6.3 unpacks the
+> update next to the app folder with the permissions an FTP copy gets, closes, and its helper swaps the folders
+> so ShadowMountPlus installs the app again. The release zip is now `Mupen64PlusPS5.zip`, so 0.6.0–0.6.2 never
+> offer an update they would break: install 0.6.3 by hand once.
+>
+> **0.6:** released as the app folder (`Mupen64PlusPS5.zip`): copy `PPSA99064/` to
 > `/data/homebrew/` or a USB drive's `homebrew/`, and ShadowMountPlus lists it. No `.elf` to send: eboot.bin
 > starts the helper it carries through the ELF loader by itself, and now prefers it over etaHEN's daemon.
 > The app updates itself from the GitHub releases ([Updates](#updates)).
@@ -87,7 +93,7 @@ angrylion renders on the CPU, which the PS5's eight Zen 2 cores can afford.
 
 ## Install and play
 
-1. **Copy the `PPSA99064` folder** from `PPSA99064.zip` (the folder itself, not just its
+1. **Copy the `PPSA99064` folder** from `Mupen64PlusPS5.zip` (the folder itself, not just its
    contents) to one of:
    - `/data/homebrew/PPSA99064` on the console (FTP, PS5Upload...);
    - `homebrew/PPSA99064` on an exFAT USB drive.
@@ -170,12 +176,17 @@ At every start, before it asks for `/data` (the console's HTTPS works only then,
 `api.github.com` for the latest release of `TheRealRetro/mupen64plus-ps5` (`GITHUB_REPO` in the Makefile).
 
 - **When the release's tag is newer** than the app's `contentVersion`, it downloads the release's
-  `PPSA99064.zip` and checks its size and SHA-256 against the release (`frontend/fe_update.cpp`).
+  `Mupen64PlusPS5.zip` and checks its size and SHA-256 against the release (`frontend/fe_update.cpp`).
 - **Once `/data` is visible,** it shows "Mupen64Plus PS5 X is available", with the release notes:
-  - ✕ writes every file over each copy of the app folder it finds (`/data/homebrew/PPSA99064`, a USB drive's
-    `homebrew/PPSA99064`...), each through a temporary `.new` name, and restarts the app;
+  - ✕ unpacks the new version next to each copy of the app folder it finds (`/data/homebrew/PPSA99064`, a USB
+    drive's `homebrew/PPSA99064`...), in `.mupen64plus-update/new/`, with the permissions an FTP copy gets
+    (0777: the console doesn't start an `eboot.bin` without execute permission), writes a job file, starts its
+    helper through the ELF loader and closes. The helper waits for the app to exit, moves the app folder aside,
+    asks ShadowMountPlus to rescan (its API, 127.0.0.1:10101) until it has dropped the app, moves the new
+    version in, rescans until it is installed again, and says so in a notification
+    (`coreorbis/orbis-shims/ProsperoUpdateJob.cpp`; its steps go to `logs/helper.log`);
   - ○ carries on (asked again next start).
-- **A release that was installed but didn't take** (the restart still ran an older eboot) isn't offered
+- **A release that was installed but didn't take** (the next start still ran an older eboot) isn't offered
   again (`/data/mupen64plus/update/installed.txt`).
 - **Settings → Check for updates: No** skips the question.
 - **An app running from a `.ffpfsc` image** can't be updated this way (read-only): copy the new folder by hand.
@@ -222,7 +233,7 @@ build-native.bat Ffpfsc       also a compressed .ffpfsc image
 Output in `build-native/` (next to `ps5/`):
 
 - `PPSA99064/`: the app folder to copy to `/data/homebrew/`.
-- `PPSA99064.zip`: the release artifact (just the folder). Its tag is the `contentVersion`, made from
+- `Mupen64PlusPS5.zip`: the release artifact (just the folder). Its tag is the `contentVersion`, made from
   `VERSION` in the Makefile (0.6.0 -> `00.006.000`); a copy is kept in `release-assets/<contentVersion>/`.
 - `PPSA99064.debug.elf`: the program with its symbols, for reading crash reports.
 - `PPSA99064.ffpfsc`: with `Ffpfsc`, a compressed image ShadowMountPlus can mount.

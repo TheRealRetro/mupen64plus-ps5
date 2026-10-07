@@ -23,3 +23,6 @@ github-token.txt
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local test builds
+test-updater/

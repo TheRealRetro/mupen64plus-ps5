@@ -199,6 +199,11 @@ bool FetchWantedCovers(std::string& text)
 	return r == 1;
 }
 
+bool StartHelper()
+{
+	return SendHelper();
+}
+
 bool RequestForSelf(std::string& how)
 {
 	const int own = PortFromEnv("N64PS5_HELPER_PORT", kHelperPort);

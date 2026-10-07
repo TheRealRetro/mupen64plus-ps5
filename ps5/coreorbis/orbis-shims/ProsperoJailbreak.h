@@ -48,6 +48,10 @@ constexpr int32_t kRetUntouched = -1337;
 // Every step goes to OrbisLog (kept in memory until boot.log can be opened).
 bool RequestForSelf(std::string& how);
 
+// The app side: sends the helper built into the app to the ELF loader, even when one is running (a new copy
+// runs a pending update job, then leaves). True when every byte went out.
+bool StartHelper();
+
 // The app side, before the jailbreak: the wanted-covers list from the helper (starting the helper through the
 // ELF loader if none answers). False when no helper could be reached; `text` may be empty (nothing wanted).
 bool FetchWantedCovers(std::string& text);

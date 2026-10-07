@@ -8,7 +8,9 @@
 #include "fe_menu.h"
 
 #include "OrbisPaths.h"
+#include "ProsperoJailbreak.h"
 #include "ProsperoNotify.h"
+#include "ProsperoUpdateJob.h"
 #include "ProsperoSce.h"
 
 #include "unzip.h"
@@ -32,6 +34,9 @@
 #ifndef N64PS5_TITLE_ID
 #define N64PS5_TITLE_ID "PPSA99064"
 #endif
+#ifndef N64PS5_RELEASE_ZIP
+#define N64PS5_RELEASE_ZIP "Mupen64PlusPS5.zip"
+#endif
 #ifndef N64PS5_GITHUB_REPO
 #define N64PS5_GITHUB_REPO "TheRealRetro/mupen64plus-ps5"
 #endif
@@ -43,7 +48,7 @@ namespace
 constexpr size_t kMaxReleaseJson = 1u << 20;
 constexpr size_t kMaxZip = 64u << 20;
 constexpr size_t kMaxFile = 32u << 20;
-const char* const kAsset = N64PS5_TITLE_ID ".zip";
+const char* const kAsset = N64PS5_RELEASE_ZIP; // not PPSA99064.zip: see RELEASE_ZIP in the Makefile
 
 // ---- a small JSON reader (the release object) --------------------------------------------------------------
 struct Json
@@ -564,32 +569,24 @@ bool WriteFile(const std::string& path, const std::vector<uint8_t>& data)
 	return fclose(f) == 0 && ok;
 }
 
-// The new files over one app folder: all written as "<file>.new" first, then renamed into place (the
-// running eboot.bin keeps its old copy open until the restart).
-bool InstallInto(const std::string& dir, const std::map<std::string, std::vector<uint8_t>>& files, std::string& why)
+// The new version, complete, in the staging folder next to an app folder (ProsperoUpdateJob.h): the installed
+// files themselves are never written over (the console then can't start the app: 0.6.1 and 0.6.2).
+bool StageInto(const updatejob::Target& t, const std::map<std::string, std::vector<uint8_t>>& files, std::string& why)
 {
+	updatejob::RemoveUpdateTree(t.staging);
 	for (const auto& f : files)
 	{
-		const std::string path = dir + "/" + f.first;
-		const size_t slash = path.rfind('/');
-		OrbisMkdirs(path.substr(0, slash));
-		if (!WriteFile(path + ".new", f.second))
+		const std::string path = t.staging + "/" + f.first;
+		OrbisMkdirs(path.substr(0, path.rfind('/')));
+		if (!WriteFile(path, f.second))
 		{
-			why = "can't write " + path + ".new";
-			for (const auto& g : files)
-				unlink((dir + "/" + g.first + ".new").c_str());
+			why = "can't write " + path;
+			updatejob::RemoveUpdateTree(t.staging);
 			return false;
 		}
 	}
-	for (const auto& f : files)
-	{
-		const std::string path = dir + "/" + f.first;
-		if (rename((path + ".new").c_str(), path.c_str()) != 0)
-		{
-			why = "can't replace " + path;
-			return false;
-		}
-	}
+	// fopen() gives no execute permission, and the console doesn't start an eboot.bin without it
+	updatejob::MakeRunnable(t.staging);
 	return true;
 }
 
@@ -598,21 +595,19 @@ std::string StampPath()
 	return OrbisDir("update") + "/installed.txt";
 }
 
-void Restart(const UpdateOffer& offer)
+// The helper installs the staged version once the app has closed (ProsperoUpdateJob.h): say so, then close
+// the way main-boot.cpp's ExitApp does.
+[[noreturn]] void CloseForUpdate(const UpdateOffer& offer)
 {
-	const char* path = "/data/homebrew/" N64PS5_TITLE_ID "/eboot.bin";
-	if (access(path, F_OK) != 0)
-		path = "/app0/eboot.bin";
-	OrbisLog("[update] installed %s: restarting %s", offer.tag.c_str(), path);
+	MessageBox("Installing Mupen64Plus PS5 " + offer.version,
+		"The app closes now. Open it again from the home screen when the notification says the update is installed.");
+	OrbisLog("[update] closing so the helper can install %s", offer.tag.c_str());
 	ProsperoNotifyFlush();
 	OrbisLogClose();
-	const int rc = sceSystemServiceLoadExec(path, nullptr);
-	if (rc == 0)
+	if (sceSystemServiceLoadExec("exit", nullptr) == 0)
 		for (int i = 0; i < 100; i++)
 			usleep(100 * 1000);
-	OrbisLogOpen("boot-after-update");
-	OrbisLog("[update] sceSystemServiceLoadExec(%s) -> %x", path, unsigned(rc));
-	MessageBox("Mupen64Plus PS5 " + offer.version + " is installed", "Close the app and open it again to use it.");
+	_exit(0);
 }
 } // namespace
 
@@ -760,14 +755,18 @@ void OfferUpdate(UpdateOffer& offer, bool ask)
 				  "copy the new folder by hand)";
 		}
 	}
-	int done = 0;
+	updatejob::Job job;
+	job.pid = int(getpid());
+	job.tag = offer.tag;
+	job.version = offer.version;
 	for (const std::string& dir : folders)
 	{
+		const updatejob::Target t = updatejob::TargetFor(dir);
 		std::string err;
-		if (InstallInto(dir, files, err))
+		if (StageInto(t, files, err))
 		{
-			done++;
-			OrbisLog("[update] %s: %zu files written", dir.c_str(), files.size());
+			job.targets.push_back(t);
+			OrbisLog("[update] %s: %zu files staged in %s", dir.c_str(), files.size(), t.staging.c_str());
 		}
 		else
 		{
@@ -775,9 +774,22 @@ void OfferUpdate(UpdateOffer& offer, bool ask)
 			why = err;
 		}
 	}
-	if (!ok || done == 0)
+	if (ok && job.targets.empty())
+		ok = false;
+	if (ok && !updatejob::Write(job, why))
+		ok = false;
+	// the helper that installs it: a fresh copy through the ELF loader (one already running only lets apps out)
+	if (ok && !jailbreak::StartHelper())
+	{
+		ok = false;
+		why = "the ELF loader (port 9021) didn't answer, so the update can't be installed now";
+	}
+	if (!ok)
 	{
 		OrbisLog("[update] %s failed: %s", offer.tag.c_str(), why.c_str());
+		unlink(updatejob::JobPath().c_str());
+		for (const updatejob::Target& t : job.targets)
+			updatejob::RemoveUpdateTree(t.staging);
 		MessageBox("The update failed", why);
 		return;
 	}
@@ -787,6 +799,6 @@ void OfferUpdate(UpdateOffer& offer, bool ask)
 		fclose(f);
 	}
 	offer.zip.clear();
-	Restart(offer);
+	CloseForUpdate(offer);
 }
 } // namespace fe

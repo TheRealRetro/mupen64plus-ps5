@@ -4,7 +4,7 @@
 #                  included) and stays running as the helper that lets the app reach /data
 #   make app    -> build/app/$(TITLE_ID)/     the app folder on its own (eboot.bin, sce_module/, sce_sys/)
 #   make host   -> build/host/                Linux builds of the same code (PS5 calls faked by host/sce_host.cpp)
-#   make native -> ../build-native/: $(TITLE_ID)/ (the app folder), $(TITLE_ID).zip (the release),
+#   make native -> ../build-native/: $(TITLE_ID)/ (the app folder), $(RELEASE_ZIP) (the release),
 #                  $(TITLE_ID).debug.elf, and $(TITLE_ID).ffpfsc with FORMAT=Ffpfsc -- the layout of the Homebrew
 #                  Browser's build-native.bat (../build-native.bat runs this)
 #   make dist   -> make native + build/dist/Mupen64PS5-v$(VERSION).elf (the optional installer) and
@@ -32,13 +32,17 @@
 PS5_PAYLOAD_SDK ?= /opt/ps5-payload-sdk
 PS5_HOST ?= ps5
 PS5_PORT ?= 9021
-VERSION ?= 0.6.2
+VERSION ?= 0.6.3
 # param.json's contentVersion, NN.NNN.NNN (0.6.1 -> 00.006.001): the release tag, as in the Homebrew Browser; it
 # must also be written in app/sce_sys/param.json (checked below)
 CONTENT_VERSION := $(shell echo $(VERSION) | awk -F. '{printf "%02d.%03d.%03d", $$1, $$2, $$3}')
 TITLE_ID ?= PPSA99064
 # where the app looks for updates (fe_update.h) and `make release` publishes
 GITHUB_REPO ?= TheRealRetro/mupen64plus-ps5
+# The release zip's name, which the app's updater looks for. Up to 0.6.2 it was $(TITLE_ID).zip, but those
+# versions' updater wrote files without execute permission and left the app unable to start: under this name
+# they never find a newer release, so they can't break themselves (their users install 0.6.3 by hand once).
+RELEASE_ZIP := Mupen64PlusPS5.zip
 APP_OUT := build/app/$(TITLE_ID)
 
 M64 := ../mupen64plus-core
@@ -94,13 +98,13 @@ EMU_SRC := coreorbis/main-boot.cpp \
 	coreorbis/orbis-shims/orbis_paths.cpp coreorbis/orbis-shims/ProsperoNotify.cpp \
 	coreorbis/orbis-shims/ProsperoVideo.cpp coreorbis/orbis-shims/ProsperoAudio.cpp \
 	coreorbis/orbis-shims/ProsperoInput.cpp coreorbis/orbis-shims/ProsperoJailbreak.cpp \
-	coreorbis/orbis-shims/ProsperoCrash.cpp \
+	coreorbis/orbis-shims/ProsperoCrash.cpp coreorbis/orbis-shims/ProsperoUpdateJob.cpp \
 	frontend/fe_emu.cpp frontend/fe_menu.cpp frontend/fe_settings.cpp frontend/fe_text.cpp \
 	frontend/fe_games.cpp frontend/fe_http.cpp frontend/fe_covers.cpp frontend/fe_shelf.cpp \
 	frontend/fe_prefetch.cpp frontend/fe_update.cpp
 # the payloads: the helper, and the installer (= helper + install)
 HELPER_SRC := coreorbis/orbis-shims/orbis_paths.cpp coreorbis/orbis-shims/ProsperoNotify.cpp \
-	coreorbis/orbis-shims/ProsperoHelper.cpp
+	coreorbis/orbis-shims/ProsperoHelper.cpp coreorbis/orbis-shims/ProsperoUpdateJob.cpp
 INSTALLER_SRC := installer/installer_main.cpp $(HELPER_SRC) coreorbis/orbis-shims/ProsperoInstall.cpp
 
 ZLIB_SRC := $(wildcard $(ZLIB)/*.c)
@@ -108,7 +112,8 @@ ZLIB_SRC := $(wildcard $(ZLIB)/*.c)
 INCS := -I$(M64SRC) -I$(M64)/subprojects/minizip -I$(ZLIB) \
 	-Icoreorbis/include-orbis -Icoreorbis/orbis-shims -Ifrontend -In64 -In64/core
 DEFS := -DN64PS5_VERSION='"$(VERSION)"' -DN64PS5_TITLE_ID='"$(TITLE_ID)"' \
-	-DN64PS5_CONTENT_VERSION='"$(CONTENT_VERSION)"' -DN64PS5_GITHUB_REPO='"$(GITHUB_REPO)"'
+	-DN64PS5_CONTENT_VERSION='"$(CONTENT_VERSION)"' -DN64PS5_GITHUB_REPO='"$(GITHUB_REPO)"' \
+	-DN64PS5_RELEASE_ZIP='"$(RELEASE_ZIP)"'
 PORT_WARN := -Wall -Wextra -Werror -Wno-unused-parameter -Wno-missing-field-initializers
 
 # generated: the game-name table (from the core's ROM catalog) built into fe_games.o
@@ -250,29 +255,29 @@ strip: $(PS5_OUT)/Mupen64PS5-stripped.elf
 # The release, in the Homebrew Browser's layout (its native/build-native.sh), in ../build-native/:
 #   $(TITLE_ID)/            the app folder: copied to /data/homebrew/ (or a USB drive's homebrew/), ShadowMountPlus
 #                           lists it
-#   $(TITLE_ID).zip         the release artifact: just $(TITLE_ID)/ (the browser installs a release's
-#                           $(TITLE_ID).zip; the tag is the contentVersion, $(CONTENT_VERSION))
+#   $(RELEASE_ZIP)         the release artifact: just $(TITLE_ID)/ (the browser installs a release's
+#                           $(RELEASE_ZIP); the tag is the contentVersion, $(CONTENT_VERSION))
 #   $(TITLE_ID).debug.elf   eboot.bin's program with its symbols, for reading crash reports
 #   $(TITLE_ID).ffpfsc      with FORMAT=Ffpfsc: a compressed image of the folder (the boilerplate's mkpfs)
-#   release-assets/$(CONTENT_VERSION)/$(TITLE_ID).zip   a copy kept per version
+#   release-assets/$(CONTENT_VERSION)/$(RELEASE_ZIP)   a copy kept per version
 NATIVE_OUT := ../build-native
 FORMAT ?= Folder
 PS5_NATIVE_BOILERPLATE ?= /root/ps5-native
 native: $(APP_FILES) build/app/mupen64plus-pie.elf
 	@mkdir -p "$(abspath $(NATIVE_OUT))"
-	rm -rf "$(abspath $(NATIVE_OUT))/$(TITLE_ID)" "$(abspath $(NATIVE_OUT))/$(TITLE_ID).zip"
+	rm -rf "$(abspath $(NATIVE_OUT))/$(TITLE_ID)" "$(abspath $(NATIVE_OUT))/$(RELEASE_ZIP)"
 	cp -r $(APP_OUT) "$(abspath $(NATIVE_OUT))/"
-	cd "$(abspath $(NATIVE_OUT))" && python3 -m zipfile -c $(TITLE_ID).zip $(TITLE_ID)
+	cd "$(abspath $(NATIVE_OUT))" && python3 -m zipfile -c $(RELEASE_ZIP) $(TITLE_ID)
 	cp build/app/mupen64plus-pie.elf "$(abspath $(NATIVE_OUT))/$(TITLE_ID).debug.elf"
 	mkdir -p "$(abspath $(NATIVE_OUT))/release-assets/$(CONTENT_VERSION)"
-	cp "$(abspath $(NATIVE_OUT))/$(TITLE_ID).zip" "$(abspath $(NATIVE_OUT))/release-assets/$(CONTENT_VERSION)/"
+	cp "$(abspath $(NATIVE_OUT))/$(RELEASE_ZIP)" "$(abspath $(NATIVE_OUT))/release-assets/$(CONTENT_VERSION)/"
 	@if [ "$$(echo $(FORMAT) | tr A-Z a-z)" = ffpfsc ]; then \
 		mkpfs=$$(bash $(PS5_NATIVE_BOILERPLATE)/tools/setup-packaging-dependencies.sh ffpfsc) && \
 		rm -f "$(abspath $(NATIVE_OUT))/$(TITLE_ID).ffpfsc" && \
 		"$$mkpfs" pack folder --no-adjust-output-file-extension --version PS5 --verify \
 			"$(abspath $(NATIVE_OUT))/$(TITLE_ID)" "$(abspath $(NATIVE_OUT))/$(TITLE_ID).ffpfsc"; \
 	fi
-	@python3 -m zipfile -l "$(abspath $(NATIVE_OUT))/$(TITLE_ID).zip"
+	@python3 -m zipfile -l "$(abspath $(NATIVE_OUT))/$(RELEASE_ZIP)"
 	@echo "Native app: $(abspath $(NATIVE_OUT))/$(TITLE_ID)  (copy this folder to /data/homebrew/), version $(CONTENT_VERSION)"
 
 # the extra release files: the optional installer payload and the sources

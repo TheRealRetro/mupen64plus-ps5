@@ -16,6 +16,7 @@
 #include "OrbisPaths.h"
 #include "ProsperoJailbreak.h"
 #include "ProsperoNotify.h"
+#include "ProsperoUpdateJob.h"
 #ifndef N64PS5_HELPER_ONLY
 #include "ProsperoInstall.h"
 #endif
@@ -84,6 +85,9 @@ int main()
 	OrbisLog("[installer] %s", msg);
 	g_ready_message = msg;
 #endif
+
+	// an update the app staged before closing (ProsperoUpdateJob.h)
+	updatejob::RunIfPending();
 
 	// the helper: runs until the console is turned off, or returns at once when one already runs
 	if (!jailbreak::ServeHelper(OnReady))

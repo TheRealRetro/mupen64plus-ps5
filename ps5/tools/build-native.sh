@@ -8,7 +8,7 @@
 # (release.bat): 0.6.1 was published from an incremental build that didn't start on the console, while a clean
 # build of the same source did.
 #
-# Output in build-native/ (next to ps5/): PPSA99064/, PPSA99064.zip, PPSA99064.debug.elf, and PPSA99064.ffpfsc
+# Output in build-native/ (next to ps5/): PPSA99064/, Mupen64PlusPS5.zip, PPSA99064.debug.elf, and PPSA99064.ffpfsc
 # with Ffpfsc. The version (param.json's contentVersion) comes from VERSION in ps5/Makefile.
 #
 # Environment:
