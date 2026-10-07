@@ -1,3 +1,5 @@
+![Mupen64Plus PS5: Nintendo 64 emulator, native PS5 app](docs/banner.png)
+
 # Mupen64Plus PS5
 
 **mupen64plus-core 2.6.0, the Nintendo 64 emulator, as a native PS5 home-screen app** for jailbroken consoles:
