@@ -126,7 +126,7 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | `/data/mupen64plus/config` | `mupen64plus.cfg`, the core's own settings (advanced) |
 | `/data/mupen64plus/data` | `mupen64plus.ini`, the core's ROM catalog (save types, per-game fixes), written by the app |
 | `/data/mupen64plus/covers` | downloaded covers and your own (`<rom file name>.png` / `.jpg`) |
-| `/data/mupen64plus/logs` | `boot.log`, `installer.log`, `helper.log` and the previous session's `.prev.log` |
+| `/data/mupen64plus/logs` | `boot.log`, `installer.log`, `helper.log` and the 4 sessions before as `.prev.log` (the last) to `.prev4.log` |
 | `/data/mupen64plus/mupen64plus-ps5.ini` | the menu settings |
 
 ## Controls

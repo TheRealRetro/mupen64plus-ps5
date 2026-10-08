@@ -117,9 +117,16 @@ void OrbisLogOpen(const char* name)
 	const std::string dir = OrbisDir("logs");
 	if (!OrbisIsDir(dir))
 		return;
-	const std::string cur = dir + "/" + name + ".log";
-	const std::string prev = dir + "/" + name + ".prev.log";
-	rename(cur.c_str(), prev.c_str()); // keep the run before, like PS5SX2's logs
+	// keep the 4 runs before (like PS5SX2's logs): <name>.prev.log is the last one, then .prev2 .. .prev4, so
+	// opening the app once or twice to fetch a log doesn't lose the session that had the problem
+	const std::string base = dir + "/" + name;
+	const std::string cur = base + ".log";
+	auto prev = [&](int n) { return base + (n == 1 ? ".prev.log" : ".prev" + std::to_string(n) + ".log"); };
+	const int kKeep = 4;
+	unlink(prev(kKeep).c_str());
+	for (int n = kKeep - 1; n >= 1; n--)
+		rename(prev(n).c_str(), prev(n + 1).c_str());
+	rename(cur.c_str(), prev(1).c_str());
 	s_log = fopen(cur.c_str(), "w");
 	if (s_log)
 	{
