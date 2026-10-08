@@ -46,6 +46,10 @@ void n64ps5_gpu_set_options(const n64ps5_gfx_options* opt);
 // (blanked) this time. The pixels stay valid until the next call.
 void n64ps5_on_vi(const n64ps5_frame* frame);
 
+// ---- RSP (plugins/rsp_cxd4_ps5.c, rsp_hle_ps5.c) -------------------------------------------------------------
+// true (default): rsp-hle does the audio (and MP3/JPEG...) tasks, cxd4 the rest; false: cxd4 runs everything.
+void n64ps5_rsp_set_hle(bool on);
+
 // ---- audio (plugins/audio_ps5.cpp) ---------------------------------------------------------------------
 void n64ps5_audio_set_mute(bool mute);
 // Fast forward: the audio plugin drops what doesn't fit instead of slowing the game down.

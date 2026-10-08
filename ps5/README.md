@@ -60,7 +60,7 @@ with tables of functions looked up by name.
 | Part | What runs it on the PS5 |
 |---|---|
 | CPU (VR4300) | mupen64plus-core's **x86-64 new dynarec** when the console gives executable memory (`n64/core/jit_ps5.c`), else its cached interpreter |
-| RSP | **mupen64plus-rsp-cxd4**: low level, it runs the game's own microcode (`n64/plugins/rsp_cxd4_ps5.c`) |
+| RSP | **mupen64plus-rsp-hle** for audio, MP3 and JPEG tasks (`n64/plugins/rsp_hle_ps5.c`), **mupen64plus-rsp-cxd4** for the rest: low level, it runs the game's own microcode, graphics included (`n64/plugins/rsp_cxd4_ps5.c`) |
 | RDP + VI | **angrylion-rdp-plus**: software, pixel-accurate, 6 render threads (`n64/plugins/gfx_ps5.c`) |
 | Audio | `n64/plugins/audio_ps5.cpp`: AI samples resampled to 48 kHz, into `libSceAudioOut` |
 | Input | `n64/plugins/input_ps5.cpp`: `libScePad`, rumble through `scePadSetVibration` |
@@ -163,10 +163,11 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | N64 video filter * | the N64's own VI filter (anti-aliasing, dither filter) |
 | Hide overscan * | crops the black border the N64 draws around the picture |
 | CPU core * | Dynarec (default, when the console allows it) or Interpreter (slower; for a game the dynarec gets wrong) |
+| Audio processing * | Fast (HLE, default): rsp-hle does the RSP's audio work; Accurate (LLE): cxd4 runs the game's audio microcode (slower; for a game whose sound HLE gets wrong) |
 | Render threads * | angrylion workers: 1–12, default 6 |
 | Controller pak * | Controller Pak (default), Rumble Pak, none |
 | Stick dead zone | 0–30% |
-| Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (cxd4), `rdp` (angrylion's rasteriser, incl. waiting for its threads), `vi` (its VI filter), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
+| Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (angrylion's rasteriser, incl. waiting for its threads), `vi` (its VI filter), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
 | Sound, Download covers | |
 | Check for updates | ask at start-up when a newer GitHub release exists (see [Updates](#updates)) |
 
@@ -217,8 +218,8 @@ At every start, before it asks for `/data` (the console's HTTPS works only then,
   first `mprotect`, then executable direct memory mapped over the code cache (what RetroArch's PS5 port uses
   for its recompilers). `boot.log` says which worked. If a game misbehaves with it, set CPU core to
   Interpreter.
-- **The RSP is the next bottleneck.** cxd4 interprets every microcode instruction, graphics and audio alike
-  (GoldenEye: ~30% of the time). High-level audio emulation would take the audio part off it.
+- **The RSP is the next bottleneck.** cxd4 interprets every graphics microcode instruction (GoldenEye:
+  ~30% of the time); audio goes through rsp-hle (Audio processing: Fast).
 - **Unsupported:** 64DD, the Transfer Pak, screenshots, a cheats menu, netplay.
 - PAL games are paced by the core's millisecond limiter, so motion is less smooth than NTSC.
 
@@ -282,7 +283,8 @@ generated from the core's `asm_defines.c` with its own `tools/gen_asm_script.sh`
 ## Source layout
 
 - **`n64/plugins/`**: the four plugins.
-  - `rsp_cxd4_ps5.c` builds cxd4 as one unit with its exports renamed.
+  - `rsp_cxd4_ps5.c` builds cxd4 as one unit with its exports renamed; `rsp_hle_ps5.c` puts rsp-hle's
+    core in front of it (what rsp-hle doesn't know, graphics above all, goes to cxd4).
   - `gfx_ps5.c` is angrylion's plugin glue without OpenGL.
   - `audio_ps5.cpp` and `input_ps5.cpp`.
 - **`n64/core/`**: the core's PS5 side.
@@ -296,7 +298,8 @@ generated from the core's `asm_defines.c` with its own `tools/gen_asm_script.sh`
   and the menus. These come from Snes9x PS5.
 - **`coreorbis/`**: the PS5 layer from Snes9x PS5: VideoOut (with the N64 scaler), AudioOut, pads (with
   rumble), the sandbox request, install, crash log, notifications and paths.
-- **`third_party/`**: angrylion-rdp-plus (`9c8b9ed`) and mupen64plus-rsp-cxd4 (`00906a9`), plus zlib. Two
+- **`third_party/`**: angrylion-rdp-plus (`9c8b9ed`), mupen64plus-rsp-cxd4 (`00906a9`) and
+  mupen64plus-rsp-hle (2.6.0, `src/` unmodified, minus `plugin.c` and the dlopen osal), plus zlib. Two
   changes are marked `M64PS5_*`:
   - cxd4 doesn't probe RDRAM with SIGSEGV;
   - angrylion's workers get 1 MiB stacks.
@@ -307,6 +310,7 @@ generated from the core's `asm_defines.c` with its own `tools/gen_asm_script.sh`
   because of the native tooling below).
 - **angrylion-rdp-plus**: MAME license (non-commercial). `gfx_ps5.c` replaces its GPL-2.0+ mupen64plus glue.
 - **mupen64plus-rsp-cxd4**: CC0.
+- **mupen64plus-rsp-hle**: GPL-2.0-or-later (`rsp_hle_ps5.c`, which builds on it, too).
 - **New code in `ps5/n64`** and the PS5 layer: MIT.
 - **Snes9x PS5** (github.com/MisterTemaki): the PS5 layer, the frontend and the build. **PS5SX2** (Spyros): the
   model they follow.

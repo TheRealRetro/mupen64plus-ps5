@@ -1,8 +1,9 @@
 // Mupen64Plus PS5: the RSP plugin, mupen64plus-rsp-cxd4 (third_party/rsp-cxd4, CC0) built into the app.
 //
 // cxd4 is a low-level RSP interpreter: it runs the game's own microcode, so graphics tasks end up as RDP
-// command lists for angrylion's renderer (gfx_ps5.c) and audio tasks write samples to RDRAM for the audio
-// plugin. Every plugin exports the same names (PluginStartup, RomOpen...), and cxd4 keeps its pointers to
+// command lists for the RDP (angrylion, gfx_ps5.c, or paraLLEl-RDP) and audio tasks write samples to RDRAM
+// for the audio plugin. With "Audio processing" on HLE (default), rsp-hle (rsp_hle_ps5.c) takes the tasks
+// it knows (audio, MP3, JPEG...) and hands the rest, graphics included, to cxd4. Every plugin exports the same names (PluginStartup, RomOpen...), and cxd4 keeps its pointers to
 // the core's config functions in globals named like the core's functions, so they are all renamed here
 // and the whole plugin is compiled as one unit (its own lto.c).
 //
@@ -36,14 +37,37 @@
 #undef DoRspCycles
 
 #include "perf.h"
+#include "rsp_hle_ps5.h"
 #include "static_dynlib.h"
 
-// cxd4's time, without the RDP lists it hands angrylion while it runs
+static m64p_error rsp_PluginStartup(m64p_dynlib_handle core, void* context, void (*debug_callback)(void*, int, const char*))
+{
+	n64ps5_hle_startup(context, debug_callback);
+	return cxd4_PluginStartup(core, context, debug_callback);
+}
+
+static void rsp_InitiateRSP(RSP_INFO info, unsigned int* cycle_count)
+{
+	n64ps5_hle_init(&info);
+	cxd4_InitiateRSP(info, cycle_count);
+}
+
+static void rsp_RomClosed(void)
+{
+	n64ps5_hle_rom_closed();
+	cxd4_RomClosed();
+}
+
+// the RSP's time (rsp-hle's and cxd4's), without the RDP lists it hands the RDP while it runs
 static unsigned int timed_DoRspCycles(unsigned int cycles)
 {
 	const uint64_t rdp0 = n64ps5_perf_total[N64PS5_PERF_RDP];
 	const uint64_t t0 = n64ps5_perf_now();
-	const unsigned int r = cxd4_DoRspCycles(cycles);
+	unsigned int r = cycles;
+	if (n64ps5_hle_enabled())
+		n64ps5_hle_execute();
+	else
+		r = cxd4_DoRspCycles(cycles);
 	const uint64_t t1 = n64ps5_perf_now();
 	const uint64_t spent = t1 - t0;
 	const uint64_t rdp = n64ps5_perf_total[N64PS5_PERF_RDP] - rdp0;
@@ -52,11 +76,11 @@ static unsigned int timed_DoRspCycles(unsigned int cycles)
 }
 
 static const m64ps5_symbol l_RspSymbols[] = {
-	{"PluginStartup", (m64p_function)cxd4_PluginStartup},
+	{"PluginStartup", (m64p_function)rsp_PluginStartup},
 	{"PluginShutdown", (m64p_function)cxd4_PluginShutdown},
 	{"PluginGetVersion", (m64p_function)cxd4_PluginGetVersion},
-	{"RomClosed", (m64p_function)cxd4_RomClosed},
-	{"InitiateRSP", (m64p_function)cxd4_InitiateRSP},
+	{"RomClosed", (m64p_function)rsp_RomClosed},
+	{"InitiateRSP", (m64p_function)rsp_InitiateRSP},
 	{"DoRspCycles", (m64p_function)timed_DoRspCycles},
 	{NULL, NULL},
 };

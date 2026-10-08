@@ -59,6 +59,8 @@ void Settings::Load()
 			render_threads = Clamp(atoi(val), 1, 12);
 		else if (key == "dynarec")
 			dynarec = atoi(val) != 0;
+		else if (key == "hle_audio")
+			hle_audio = atoi(val) != 0;
 		else if (key == "gpu")
 			gpu = atoi(val) != 0;
 		else if (key == "upscale")
@@ -108,6 +110,7 @@ void Settings::Save() const
 	fprintf(f, "show_fps=%d\n", show_fps ? 1 : 0);
 	fprintf(f, "render_threads=%d\n", render_threads);
 	fprintf(f, "dynarec=%d\n", dynarec ? 1 : 0);
+	fprintf(f, "hle_audio=%d\n", hle_audio ? 1 : 0);
 	fprintf(f, "gpu=%d\n", gpu ? 1 : 0);
 	fprintf(f, "upscale=%d\n", upscale);
 	fprintf(f, "gpu_sync=%d\n", gpu_sync ? 1 : 0);

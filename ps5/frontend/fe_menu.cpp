@@ -209,7 +209,11 @@ void DrawOptionBox(const char* title, const std::vector<Row>& rows, int sel, boo
 	const int scale = 3;
 	const int row_h = 44;
 	const int bw = 1000;
-	const int bh = 120 + int(rows.size()) * row_h + 30;
+	// more rows than fit on the screen (the pause menu): a window that follows the selection, with a scrollbar
+	const int n = int(rows.size());
+	const int visible = std::min(n, (H - 40 - 150) / row_h);
+	const int top = std::max(0, std::min(sel - visible / 2, n - visible));
+	const int bh = 120 + visible * row_h + 30;
 	const int bx = (W - bw) / 2;
 	const int by = std::max(20, (H - bh) / 2);
 	if (!over_game)
@@ -217,18 +221,26 @@ void DrawOptionBox(const char* title, const std::vector<Row>& rows, int sel, boo
 	ps5video::FillRect(bx, by, bw, bh, kPanel);
 	ps5video::FillRect(bx, by + 86, bw, 3, kAccent);
 	DrawText(bx + 40, by + 24, title, 5, kAccent);
-	for (size_t i = 0; i < rows.size(); i++)
+	for (int i = top; i < top + visible; i++)
 	{
-		const int y = by + 110 + int(i) * row_h;
-		if (int(i) == sel)
+		const int y = by + 110 + (i - top) * row_h;
+		if (i == sel)
 			ps5video::FillRect(bx + 16, y - 6, bw - 32, row_h, kSel);
 		const uint32_t col = rows[i].enabled ? kText : kDim;
 		DrawText(bx + 40, y, rows[i].label.c_str(), scale, col);
 		if (!rows[i].value.empty())
 		{
-			const std::string v = (int(i) == sel ? "< " + rows[i].value + " >" : rows[i].value);
-			DrawText(bx + bw - 40 - TextWidth(v.c_str(), scale), y, v.c_str(), scale, int(i) == sel ? kText : kAccent);
+			const std::string v = (i == sel ? "< " + rows[i].value + " >" : rows[i].value);
+			DrawText(bx + bw - 40 - TextWidth(v.c_str(), scale), y, v.c_str(), scale, i == sel ? kText : kAccent);
 		}
+	}
+	if (visible < n)
+	{
+		const int track = visible * row_h;
+		const int thumb = std::max(30, track * visible / n);
+		const int ty = by + 104 + (track - thumb) * top / (n - visible);
+		ps5video::FillRect(bx + bw - 12, by + 104, 6, track, kSel);
+		ps5video::FillRect(bx + bw - 12, ty, 6, thumb, kAccent);
 	}
 }
 
@@ -253,6 +265,7 @@ enum SettingRow
 	S_GPU_SYNC,
 #endif
 	S_CPU,
+	S_RSP_AUDIO,
 	S_THREADS,
 	S_PAK,
 	S_DEADZONE,
@@ -278,6 +291,7 @@ std::string SettingLabel(int s)
 		case S_GPU_SYNC: return "GPU sync *";
 #endif
 		case S_CPU: return "CPU core *";
+		case S_RSP_AUDIO: return "Audio processing *";
 		case S_THREADS: return "Render threads *";
 		case S_PAK: return "Controller pak *";
 		case S_DEADZONE: return "Stick dead zone";
@@ -319,6 +333,7 @@ std::string SettingValue(int s)
 		case S_GPU_SYNC: return !c.gpu ? "GPU only" : c.gpu_sync ? "Accurate" : "Fast";
 #endif
 		case S_CPU: return c.dynarec ? "Dynarec" : "Interpreter";
+		case S_RSP_AUDIO: return c.hle_audio ? "Fast (HLE)" : "Accurate (LLE)";
 		case S_THREADS: snprintf(buf, sizeof(buf), "%d", c.render_threads); return buf;
 		case S_PAK: return PakName(c.pak);
 		case S_DEADZONE: snprintf(buf, sizeof(buf), "%d%%", c.deadzone); return buf;
@@ -364,6 +379,7 @@ void ChangeSetting(int s, int dir)
 			break;
 #endif
 		case S_CPU: c.dynarec = !c.dynarec; break;
+		case S_RSP_AUDIO: c.hle_audio = !c.hle_audio; break;
 		case S_THREADS:
 		{
 			static const int steps[] = {1, 2, 4, 6, 8, 10, 12};

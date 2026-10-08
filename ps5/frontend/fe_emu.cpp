@@ -206,6 +206,7 @@ struct State
 	bool limiter_on = true;
 	emu::ExitReason exit = emu::ExitReason::BackToList;
 	uint32_t vi = 0;
+	uint32_t blank_vis = 0; // VIs in a row without a picture (n64ps5_on_vi)
 	uint32_t prev_buttons = 0;
 	bool block_until_release = false;
 	int pending_save_slot = -1;
@@ -557,6 +558,23 @@ extern "C" void n64ps5_on_vi(const n64ps5_frame* frame)
 
 	if (frame && !g.stopping && (!ff || (g.vi % 4) == 0))
 		g_presenter.Submit(frame->pixels, frame->width, frame->height, frame->pitch, !ff && !g.pal);
+
+	// No picture: the game blanked the screen (VI off, e.g. Perfect Dark while it loads). A real N64 shows
+	// black there, but the last picture would stay on screen and look like a hang. Short blanks (between
+	// video modes) stay invisible.
+	const uint32_t kBlankVis = 10;
+	if (frame)
+	{
+		if (g.blank_vis >= kBlankVis)
+			OrbisLog("[emu] screen blank for %u VIs (%.1f s), shown black", g.blank_vis,
+				g.blank_vis / (g.pal ? 50.0 : 60.0));
+		g.blank_vis = 0;
+	}
+	else if (++g.blank_vis == kBlankVis && !g.stopping)
+	{
+		static const uint32_t kBlack[320 * 240] = {};
+		g_presenter.Submit(kBlack, 320, 240, 320, !ff && !g.pal);
+	}
 }
 
 // =========================================================================================================
@@ -693,6 +711,7 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	if (ConfigOpenSection("Core", &core_cfg) == M64ERR_SUCCESS && core_cfg)
 		SetCoreInt(core_cfg, "R4300Emulator", use_dynarec ? 2 : 1);
 	OrbisLog("[emu] CPU: %s", use_dynarec ? "dynamic recompiler" : "cached interpreter");
+	n64ps5_rsp_set_hle(cfg.hle_audio);
 	static const char* const kPaks[] = {"none", "Controller Pak", "Rumble Pak"};
 	OrbisLog("[emu] controller pak: %s", kPaks[cfg.pak < 0 || cfg.pak > 2 ? 1 : cfg.pak]);
 	LogSaves("at start", settings.goodname, settings.MD5);
@@ -735,6 +754,7 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	g.stopping = false;
 	g.exit = ExitReason::BackToList;
 	g.vi = 0;
+	g.blank_vis = 0;
 	g.prev_buttons = ps5input::Pad(0).raw_buttons;
 	g.block_until_release = true; // Cross from the shelf
 	n64ps5_input_block(true);

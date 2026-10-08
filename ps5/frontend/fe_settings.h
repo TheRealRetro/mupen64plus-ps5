@@ -16,6 +16,7 @@ struct Settings
 	bool show_fps = false;
 	// emulation
 	bool dynarec = true; // the x86-64 dynarec when the console gives us executable memory, else the interpreter
+	bool hle_audio = true; // audio tasks done by rsp-hle (fast), else by cxd4 running the game's microcode
 	bool gpu = true; // the GPU renderer, paraLLEl-RDP (builds with Vulkan only), else angrylion on the CPU
 	int upscale = 4; // the GPU renderer's internal resolution: 1, 2, 4 or 8 times the N64's
 	bool gpu_sync = true; // wait for the GPU wherever the game waits for the RDP (else faster, may glitch)

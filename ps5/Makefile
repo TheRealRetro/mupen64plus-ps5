@@ -22,8 +22,8 @@
 # What goes into eboot.bin:
 #   - mupen64plus-core 2.6.0 (../mupen64plus-core, unmodified), with its x86-64 dynarec, minus the parts that need
 #     SDL/OpenGL/libpng/dlopen, which n64/core/*.c replace; n64/sdl is the bit of SDL it still uses;
-#   - its plugins, linked in (n64/plugins): mupen64plus-rsp-cxd4 (LLE RSP), angrylion-rdp-plus (software
-#     RDP/VI), AudioOut and DualSense input;
+#   - its plugins, linked in (n64/plugins): mupen64plus-rsp-cxd4 (LLE RSP) behind mupen64plus-rsp-hle (HLE
+#     audio), angrylion-rdp-plus (software RDP/VI), AudioOut and DualSense input;
 #   - the frontend (shelf, menus, covers) and the PS5 layer (coreorbis).
 #
 # Dependencies: the ps5-payload-dev SDK (v0.42 or newer, https://github.com/ps5-payload-dev/sdk) in
@@ -60,6 +60,7 @@ M64 := ../mupen64plus-core
 M64SRC := $(M64)/src
 ZLIB := third_party/zlib
 CXD4 := third_party/rsp-cxd4
+RSPHLE := third_party/rsp-hle/src
 ANGRYLION := third_party/angrylion-rdp-plus/src
 
 # ---- mupen64plus-core (the unix Makefile's list, without vidext/eventloop/screenshot/sdl_key_converter and the
@@ -90,9 +91,12 @@ CORE_SUB_SRC := md5/md5.c minizip/ioapi.c minizip/unzip.c minizip/zip.c
 N64_SRC := n64/sdl/sdl_shim.c n64/core/perf.c n64/core/jit_ps5.c n64/core/vidext_ps5.c n64/core/eventloop_ps5.c n64/core/screenshot_ps5.c \
 	n64/core/osal_dynlib_static.c
 # the plugins
-PLUGIN_C_SRC := n64/plugins/rsp_cxd4_ps5.c n64/plugins/gfx_ps5.c
+PLUGIN_C_SRC := n64/plugins/rsp_cxd4_ps5.c n64/plugins/rsp_hle_ps5.c n64/plugins/gfx_ps5.c
 PLUGIN_CXX_SRC := n64/plugins/audio_ps5.cpp n64/plugins/input_ps5.cpp
 ANGRYLION_C_SRC := core/n64video.c
+# mupen64plus-rsp-hle's core (its plugin.c is replaced by n64/plugins/rsp_hle_ps5.c): HLE audio etc.
+RSPHLE_SRC := alist.c alist_audio.c alist_naudio.c alist_nead.c audio.c cicx105.c hle.c hvqm.c jpeg.c memory.c mp3.c \
+	musyx.c re2.c
 ANGRYLION_CXX_SRC := core/parallel.cpp
 
 # the x86-64 new dynarec (DYNAREC, NEW_DYNAREC=2): its code cache is made executable by n64/core/jit_ps5.c
@@ -101,7 +105,7 @@ CORE_DEFS := -DNDEBUG -DNOCRYPT -DNOUNCRYPT -DM64P_PARALLEL -DDYNAREC -DNEW_DYNA
 DYNAREC_FLAGS := -Dmprotect=n64ps5_jit_mprotect
 CORE_INCS := -In64/sdl -I$(M64SRC) -I$(M64)/subprojects/md5 -I$(M64)/subprojects/xxhash -I$(M64)/subprojects/minizip -I$(ZLIB)
 CXD4_DEFS := -DM64P_PLUGIN_API -DARCH_MIN_SSE2 -DM64PS5_NO_RDRAM_PROBE -DNDEBUG
-CXD4_INCS := -I$(CXD4) -I$(M64SRC)/api -In64 -In64/core -I$(M64SRC)
+CXD4_INCS := -I$(CXD4) -I$(RSPHLE) -I$(M64SRC)/api -In64 -In64/core -I$(M64SRC)
 GFX_INCS := -I$(ANGRYLION) -I$(M64SRC) -In64 -In64/core
 
 # the app (eboot.bin): the frontend and the PS5 layer
@@ -175,7 +179,8 @@ PS5_CORE_OBJ := $(patsubst %.c,$(PS5_OUT)/m64/%.o,$(CORE_SRC)) $(patsubst %.c,$(
 	$(PS5_OUT)/n64/n64/core/linkage_x64.o \
 	$(patsubst %.c,$(PS5_OUT)/n64/%.o,$(N64_SRC)) \
 	$(patsubst %.c,$(PS5_OUT)/n64/%.o,$(PLUGIN_C_SRC)) $(patsubst %.cpp,$(PS5_OUT)/n64/%.o,$(PLUGIN_CXX_SRC)) \
-	$(patsubst %.c,$(PS5_OUT)/angrylion/%.o,$(ANGRYLION_C_SRC)) $(patsubst %.cpp,$(PS5_OUT)/angrylion/%.o,$(ANGRYLION_CXX_SRC))
+	$(patsubst %.c,$(PS5_OUT)/angrylion/%.o,$(ANGRYLION_C_SRC)) $(patsubst %.cpp,$(PS5_OUT)/angrylion/%.o,$(ANGRYLION_CXX_SRC)) \
+	$(patsubst %.c,$(PS5_OUT)/rsphle/%.o,$(RSPHLE_SRC))
 PS5_EMU_OBJ := $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(EMU_SRC) $(VULKAN_SRC))
 PS5_HELPER_OBJ := $(PS5_OUT)/port/installer/helper_main.o $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(HELPER_SRC))
 PS5_INSTALLER_OBJ := $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(INSTALLER_SRC))
@@ -207,7 +212,7 @@ $(PS5_OUT)/m64sub/%.o: $(M64)/subprojects/%.c
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(CORE_DEFS) $(CORE_INCS) -w -c -o $@ $<
 
-$(PS5_OUT)/n64/n64/plugins/rsp_cxd4_ps5.o: n64/plugins/rsp_cxd4_ps5.c $(wildcard $(CXD4)/*.c $(CXD4)/*.h $(CXD4)/vu/*) n64/core/static_dynlib.h
+$(PS5_OUT)/n64/n64/plugins/rsp_cxd4_ps5.o: n64/plugins/rsp_cxd4_ps5.c $(wildcard $(CXD4)/*.c $(CXD4)/*.h $(CXD4)/vu/*) n64/core/static_dynlib.h n64/n64_bridge.h
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(CXD4_DEFS) $(CXD4_INCS) -w -c -o $@ $<
 
@@ -222,6 +227,10 @@ $(PS5_OUT)/n64/%.o: %.c $(PORT_HDRS)
 $(PS5_OUT)/n64/%.o: %.cpp $(PORT_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PORT_WARN) -c -o $@ $<
+
+$(PS5_OUT)/rsphle/%.o: $(RSPHLE)/%.c $(wildcard $(RSPHLE)/*.h)
+	@mkdir -p $(dir $@)
+	$(PS5_CC) -std=gnu11 $(PS5_OPT) -DNDEBUG -I$(RSPHLE) -w -c -o $@ $<
 
 $(PS5_OUT)/angrylion/%.o: $(ANGRYLION)/%.c
 	@mkdir -p $(dir $@)
@@ -457,7 +466,8 @@ HOST_CORE_OBJ := $(patsubst %.c,$(HOST_OUT)/m64/%.o,$(CORE_SRC)) $(patsubst %.c,
 	$(HOST_OUT)/n64/n64/core/linkage_x64.o \
 	$(patsubst %.c,$(HOST_OUT)/n64/%.o,$(N64_SRC)) \
 	$(patsubst %.c,$(HOST_OUT)/n64/%.o,$(PLUGIN_C_SRC)) $(patsubst %.cpp,$(HOST_OUT)/n64/%.o,$(PLUGIN_CXX_SRC)) \
-	$(patsubst %.c,$(HOST_OUT)/angrylion/%.o,$(ANGRYLION_C_SRC)) $(patsubst %.cpp,$(HOST_OUT)/angrylion/%.o,$(ANGRYLION_CXX_SRC))
+	$(patsubst %.c,$(HOST_OUT)/angrylion/%.o,$(ANGRYLION_C_SRC)) $(patsubst %.cpp,$(HOST_OUT)/angrylion/%.o,$(ANGRYLION_CXX_SRC)) \
+	$(patsubst %.c,$(HOST_OUT)/rsphle/%.o,$(RSPHLE_SRC))
 HOST_EMU_OBJ := $(patsubst %.cpp,$(HOST_OUT)/port/%.o,$(EMU_SRC) host/sce_host.cpp)
 HOST_HELPER_OBJ := $(HOST_OUT)/port/installer/helper_main.o $(patsubst %.cpp,$(HOST_OUT)/port/%.o,$(HELPER_SRC) host/sce_host.cpp)
 HOST_INSTALLER_OBJ := $(patsubst %.cpp,$(HOST_OUT)/port/%.o,$(INSTALLER_SRC) host/sce_host.cpp)
@@ -487,7 +497,7 @@ $(HOST_OUT)/m64sub/%.o: $(M64)/subprojects/%.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(CORE_DEFS) $(CORE_INCS) -w -c -o $@ $<
 
-$(HOST_OUT)/n64/n64/plugins/rsp_cxd4_ps5.o: n64/plugins/rsp_cxd4_ps5.c $(wildcard $(CXD4)/*.c $(CXD4)/*.h $(CXD4)/vu/*) n64/core/static_dynlib.h
+$(HOST_OUT)/n64/n64/plugins/rsp_cxd4_ps5.o: n64/plugins/rsp_cxd4_ps5.c $(wildcard $(CXD4)/*.c $(CXD4)/*.h $(CXD4)/vu/*) n64/core/static_dynlib.h n64/n64_bridge.h
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(CXD4_DEFS) $(CXD4_INCS) -w -c -o $@ $<
 
@@ -502,6 +512,10 @@ $(HOST_OUT)/n64/%.o: %.c $(PORT_HDRS)
 $(HOST_OUT)/n64/%.o: %.cpp $(PORT_HDRS)
 	@mkdir -p $(dir $@)
 	$(HOST_CXX) -std=c++17 $(HOST_OPT) $(HOST_SAN) $(DEFS) $(INCS) $(PORT_WARN) -c -o $@ $<
+
+$(HOST_OUT)/rsphle/%.o: $(RSPHLE)/%.c $(wildcard $(RSPHLE)/*.h)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=gnu11 $(HOST_OPT) -I$(RSPHLE) -w -c -o $@ $<
 
 $(HOST_OUT)/angrylion/%.o: $(ANGRYLION)/%.c
 	@mkdir -p $(dir $@)
