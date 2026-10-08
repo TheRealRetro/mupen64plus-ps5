@@ -29,6 +29,7 @@ typedef struct
 extern const m64ps5_library m64ps5_core_lib; // osal_dynlib_static.c
 extern const m64ps5_library m64ps5_rsp_lib; // ps5/n64/plugins/rsp_cxd4_ps5.c
 extern const m64ps5_library m64ps5_gfx_lib; // ps5/n64/plugins/gfx_ps5.c
+extern const m64ps5_library m64ps5_gfx_parallel_lib; // ps5/n64/plugins/gfx_parallel_ps5.cpp (VULKAN=1)
 extern const m64ps5_library m64ps5_audio_lib; // ps5/n64/plugins/audio_ps5.cpp
 extern const m64ps5_library m64ps5_input_lib; // ps5/n64/plugins/input_ps5.cpp
 

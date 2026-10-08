@@ -508,7 +508,13 @@ Rect ComputeRect(int src_w, int src_h, Aspect aspect)
 			break;
 		case Aspect::Integer:
 		{
-			const int k = std::max(1, std::min(kWidth / src_w, kHeight / src_h));
+			const int k = std::min(kWidth / src_w, kHeight / src_h);
+			if (k == 0) // larger than the screen (the GPU renderer upscaled it): as 4:3
+			{
+				dh = kHeight;
+				dw = kHeight * 4 / 3;
+				break;
+			}
 			dw = src_w * k;
 			dh = src_h * k;
 			break;

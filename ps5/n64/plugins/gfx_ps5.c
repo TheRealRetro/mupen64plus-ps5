@@ -1,6 +1,6 @@
 // Mupen64Plus PS5: the video plugin, angrylion's RDP Plus (third_party/angrylion-rdp-plus) without OpenGL.
 //
-// The PS5 homebrew SDK has no OpenGL or Vulkan driver, so a hardware renderer (GLideN64, paraLLEl) is out.
+// It runs on the CPU at the N64's own resolution; builds with Vulkan also have the GPU one (gfx_parallel_ps5.cpp).
 // angrylion's renderer is a software, pixel-accurate RDP + VI: it rasterises the RDP command lists that
 // the low-level RSP plugin (cxd4) produces straight into RDRAM, and its VI emulation turns the frame
 // buffer into a picture. It spreads the work over several threads, which the PS5's eight Zen 2 cores have.
@@ -35,7 +35,7 @@ static bool l_RomOpen;
 static bool l_WarnedHle;
 static GFX_INFO l_Gfx;
 static void (*l_RenderCallback)(int);
-static n64ps5_gfx_options l_Options = {0, false, 6, 1};
+static n64ps5_gfx_options l_Options = {0, false, 6, 1, 1, true};
 static struct n64video_config l_Config;
 static struct n64video_frame_buffer l_LastFb; // for ReadScreen2
 

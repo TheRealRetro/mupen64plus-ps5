@@ -29,10 +29,18 @@ typedef struct
 	bool hide_overscan; // crop the VI's blank borders
 	int num_workers; // angrylion render threads (0 = one per hardware thread)
 	int dp_compat; // 0 fast, 1 moderate, 2 slow (sync points between render threads)
+	int upscale; // the GPU renderer's internal resolution: 1, 2, 4 or 8 times the N64's
+	bool gpu_sync; // the GPU renderer waits for the GPU wherever the game waits for the RDP (accurate)
 } n64ps5_gfx_options;
 
 // The frontend sets these before the game starts; RomOpen applies them.
 void n64ps5_gfx_set_options(const n64ps5_gfx_options* opt);
+
+// ---- the GPU video plugin (plugins/gfx_parallel_ps5.cpp, VULKAN=1 builds only) ---------------------------
+// paraLLEl-RDP on Vulkan. n64ps5_gpu_available makes the Vulkan device the first time (false: no GPU
+// renderer, use angrylion).
+bool n64ps5_gpu_available(void);
+void n64ps5_gpu_set_options(const n64ps5_gfx_options* opt);
 
 // Implemented by the frontend: called on every video interrupt. `frame` is NULL when the VI shows nothing
 // (blanked) this time. The pixels stay valid until the next call.

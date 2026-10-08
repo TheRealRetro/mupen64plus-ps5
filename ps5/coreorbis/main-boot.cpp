@@ -153,11 +153,11 @@ int Run(int argc, char** argv)
 	}
 
 #ifdef N64PS5_VULKAN
-	// the Vulkan test build (make VULKAN=1): the GPU renderer's first step, results on screen and in boot.log
+	// builds with Vulkan (make VULKAN=1): what the GPU offers, in boot.log (27 ms on the console); the driver's
+	// own messages go to logs/vulkan.log
 	N64_STAGE(Boot, "vulkan self-test");
-	fe::ShowBusy("Testing the GPU (Vulkan)...");
-	const ps5vulkan::ProbeResult vk = ps5vulkan::Probe();
-	fe::MessageBox("Vulkan self-test", vk.summary + "\nDetails are in " + OrbisRoot() + "/logs/boot.log");
+	ps5vulkan::CaptureDriverMessages();
+	ps5vulkan::Probe();
 #endif
 
 	N64_STAGE(Boot, "update");

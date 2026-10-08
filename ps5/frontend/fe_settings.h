@@ -16,6 +16,9 @@ struct Settings
 	bool show_fps = false;
 	// emulation
 	bool dynarec = true; // the x86-64 dynarec when the console gives us executable memory, else the interpreter
+	bool gpu = true; // the GPU renderer, paraLLEl-RDP (builds with Vulkan only), else angrylion on the CPU
+	int upscale = 4; // the GPU renderer's internal resolution: 1, 2, 4 or 8 times the N64's
+	bool gpu_sync = true; // wait for the GPU wherever the game waits for the RDP (else faster, may glitch)
 	int render_threads = 6; // angrylion workers (1 = single-threaded)
 	int dp_compat = 1; // angrylion sync points between its workers: 0 fewest (fastest), 1, 2 most (safest)
 	bool audio = true;

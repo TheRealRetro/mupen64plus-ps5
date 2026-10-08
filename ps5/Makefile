@@ -378,6 +378,21 @@ VULKAN_STUBS := $(APP_BUILD)/stubs/libSceAgc.so $(APP_BUILD)/stubs/libSceAgcDriv
 VULKAN_LINK := $$(bash tools/radv-link-flags.sh $(PS5_VULKAN))
 # the RADV archive has zlib built in (its shader cache), which stands in for ours
 EBOOT_ZLIB :=
+# the GPU renderer: paraLLEl-RDP (third_party/parallel-rdp, its standalone tree; config.mk lists its files)
+# and its plugin glue (n64/plugins/gfx_parallel_ps5.cpp)
+PARALLEL_RDP_IMPLEMENTATION := third_party/parallel-rdp
+include $(PARALLEL_RDP_IMPLEMENTATION)/config.mk
+VULKAN_OBJ := $(patsubst %.cpp,$(PS5_OUT)/prdp/%.o,$(PARALLEL_RDP_SOURCES_CXX)) \
+	$(patsubst %.c,$(PS5_OUT)/prdp/%.o,$(PARALLEL_RDP_SOURCES_C)) $(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o
+$(PS5_OUT)/prdp/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(PARALLEL_RDP_CXXFLAGS) $(PARALLEL_RDP_INCLUDE_DIRS) -w -c -o $@ $<
+$(PS5_OUT)/prdp/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(PARALLEL_RDP_CFLAGS) $(PARALLEL_RDP_INCLUDE_DIRS) -w -c -o $@ $<
+$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS)
+	@mkdir -p $(dir $@)
+	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PARALLEL_RDP_INCLUDE_DIRS) $(PORT_WARN) -c -o $@ $<
 $(APP_BUILD)/stubs/libSceAgc.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_canary_link_stub.c
 $(APP_BUILD)/stubs/libSceAgcDriver.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
 $(VULKAN_STUBS):
@@ -389,7 +404,7 @@ EBOOT_ZLIB = $(PS5_ZLIB_OBJ)
 endif
 
 EBOOT_OBJS = $(APP_BUILD)/app_crt.o $(APP_BUILD)/app_cpp_runtime.o $(PS5_CORE_OBJ) $(PS5_EMU_OBJ) $(EBOOT_ZLIB) \
-	$(PS5_OUT)/helper_data.o
+	$(VULKAN_OBJ) $(PS5_OUT)/helper_data.o
 $(APP_BUILD)/mupen64plus-pie.elf: $(EBOOT_OBJS) $(NATIVE)/tooling/native/ps5-pie.ld $(NATIVE)/tooling/native/ehframe.ld \
 		$(NATIVE)/tooling/native/app-symbols.map $(NATIVE)/tooling/native/localize.map $(VULKAN_STUBS)
 	$(LLD) -m elf_x86_64 -pie -z max-page-size=0x4000 --hash-style=gnu \

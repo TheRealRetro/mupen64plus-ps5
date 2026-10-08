@@ -28,4 +28,7 @@ struct ProbeResult
 };
 
 ProbeResult Probe();
+
+// Standard error, where RADV and paraLLEl-RDP's worker threads write their messages, to logs/vulkan.log.
+void CaptureDriverMessages();
 } // namespace ps5vulkan

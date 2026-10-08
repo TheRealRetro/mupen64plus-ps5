@@ -696,14 +696,30 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	static const char* const kPaks[] = {"none", "Controller Pak", "Rumble Pak"};
 	OrbisLog("[emu] controller pak: %s", kPaks[cfg.pak < 0 || cfg.pak > 2 ? 1 : cfg.pak]);
 	LogSaves("at start", settings.goodname, settings.MD5);
-	const n64ps5_gfx_options gfx = {cfg.vi_filter ? 0 : 1, cfg.hide_overscan, cfg.render_threads, cfg.dp_compat};
+	const n64ps5_gfx_options gfx = {cfg.vi_filter ? 0 : 1, cfg.hide_overscan, cfg.render_threads, cfg.dp_compat,
+		cfg.upscale, cfg.gpu_sync};
 	n64ps5_gfx_set_options(&gfx);
+	// the renderer: paraLLEl-RDP on the GPU when the setting asks for it and Vulkan works, else angrylion
+	const m64ps5_library* gfx_lib = &m64ps5_gfx_lib;
+#ifdef N64PS5_VULKAN
+	if (cfg.gpu)
+	{
+		if (n64ps5_gpu_available())
+		{
+			n64ps5_gpu_set_options(&gfx);
+			gfx_lib = &m64ps5_gfx_parallel_lib;
+		}
+		else
+			emu::Osd("The GPU renderer is not available: using the CPU renderer");
+	}
+#endif
+	OrbisLog("[emu] renderer: %s", gfx_lib == &m64ps5_gfx_lib ? "angrylion (CPU)" : "paraLLEl-RDP (GPU)");
 	ApplySettings();
 
 	static const char* const kNames[] = {"video", "audio", "input", "rsp"};
 	for (int i = 0; i < 4; i++)
 	{
-		r = CoreAttachPlugin(kPluginTypes[i], M64PS5_HANDLE(*kPlugins[i]));
+		r = CoreAttachPlugin(kPluginTypes[i], M64PS5_HANDLE(i == 0 ? *gfx_lib : *kPlugins[i]));
 		if (r != M64ERR_SUCCESS)
 		{
 			OrbisLog("[emu] CoreAttachPlugin(%s) -> %d (%s)", kNames[i], int(r), CoreErrorMessage(r));

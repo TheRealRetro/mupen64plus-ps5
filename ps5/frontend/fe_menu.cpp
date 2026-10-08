@@ -247,6 +247,11 @@ enum SettingRow
 	S_OVERSCAN,
 	S_FPS,
 	S_AUDIO,
+#ifdef N64PS5_VULKAN
+	S_RENDERER,
+	S_UPSCALE,
+	S_GPU_SYNC,
+#endif
 	S_CPU,
 	S_THREADS,
 	S_PAK,
@@ -267,6 +272,11 @@ std::string SettingLabel(int s)
 		case S_OVERSCAN: return "Hide overscan *";
 		case S_FPS: return "Show FPS";
 		case S_AUDIO: return "Sound";
+#ifdef N64PS5_VULKAN
+		case S_RENDERER: return "Renderer *";
+		case S_UPSCALE: return "Internal resolution *";
+		case S_GPU_SYNC: return "GPU sync *";
+#endif
 		case S_CPU: return "CPU core *";
 		case S_THREADS: return "Render threads *";
 		case S_PAK: return "Controller pak *";
@@ -299,6 +309,15 @@ std::string SettingValue(int s)
 		case S_OVERSCAN: return YesNo(c.hide_overscan);
 		case S_FPS: return YesNo(c.show_fps);
 		case S_AUDIO: return YesNo(c.audio);
+#ifdef N64PS5_VULKAN
+		case S_RENDERER: return c.gpu ? "GPU (paraLLEl-RDP)" : "CPU (angrylion)";
+		case S_UPSCALE:
+			if (!c.gpu)
+				return "GPU only";
+			snprintf(buf, sizeof(buf), c.upscale == 1 ? "1x (native)" : "%dx", c.upscale);
+			return buf;
+		case S_GPU_SYNC: return !c.gpu ? "GPU only" : c.gpu_sync ? "Accurate" : "Fast";
+#endif
 		case S_CPU: return c.dynarec ? "Dynarec" : "Interpreter";
 		case S_THREADS: snprintf(buf, sizeof(buf), "%d", c.render_threads); return buf;
 		case S_PAK: return PakName(c.pak);
@@ -330,6 +349,20 @@ void ChangeSetting(int s, int dir)
 		case S_OVERSCAN: c.hide_overscan = !c.hide_overscan; break;
 		case S_FPS: c.show_fps = !c.show_fps; break;
 		case S_AUDIO: c.audio = !c.audio; break;
+#ifdef N64PS5_VULKAN
+		case S_RENDERER: c.gpu = !c.gpu; break;
+		case S_UPSCALE:
+		{
+			static const int steps[] = {1, 2, 4, 8};
+			if (c.gpu)
+				c.upscale = Step(c.upscale, dir, steps, 4);
+			break;
+		}
+		case S_GPU_SYNC:
+			if (c.gpu)
+				c.gpu_sync = !c.gpu_sync;
+			break;
+#endif
 		case S_CPU: c.dynarec = !c.dynarec; break;
 		case S_THREADS:
 		{

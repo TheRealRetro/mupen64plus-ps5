@@ -553,11 +553,19 @@ void Destroy(Context& c)
 }
 } // namespace
 
+void CaptureDriverMessages()
+{
+	const std::string path = OrbisRoot() + "/logs/vulkan.log";
+	if (freopen(path.c_str(), "w", stderr))
+	{
+		setvbuf(stderr, nullptr, _IOLBF, 0);
+		OrbisLog("[vulkan] driver messages (standard error) go to %s", path.c_str());
+	}
+}
+
 ProbeResult Probe()
 {
 	ProbeResult r;
-	// RADV keeps compiled shaders on disk; not for a test.
-	setenv("MESA_SHADER_CACHE_DISABLE", "true", 1);
 	const timespec start = Now();
 	OrbisLog("[vulkan] self-test starts");
 	Context c;
