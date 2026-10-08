@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -46,12 +47,30 @@ public:
 	void drain();
 
 	void enqueue_command(unsigned num_words, const uint32_t *words);
+	// Mupen64Plus PS5: several commands under one lock, framed as they sit in the ring (num_words, words...);
+	// count is at most the ring's size.
+	void enqueue_commands(size_t count, const uint32_t *framed);
+
+	// Mupen64Plus PS5: where the time goes (rdtsc ticks), read and reset by the plugin's report.
+	std::atomic<uint64_t> producer_wait_ticks{0}; // enqueue_command waiting for room
+	std::atomic<uint64_t> worker_busy_ticks{0};   // the worker processing commands
+	std::atomic<uint64_t> batches{0}, words_in{0};
+	std::atomic<uint64_t> wakeups{0};             // the producer waking the sleeping worker
 
 private:
 	CommandProcessor *processor = nullptr;
 	std::thread thr;
 	std::mutex lock;
-	std::condition_variable cond;
+	// Mupen64Plus PS5: one condition variable each way, signalled only when the other side sleeps, and the
+	// worker takes every queued command at once (command_ring.cpp): a wake-up per RDP command cost more
+	// than the GPU's work on the PS5.
+	std::condition_variable cond_data;  // the worker waits for commands
+	std::condition_variable cond_space; // the producer waits for room, or for drain()
+	bool worker_waiting = false;
+	bool producer_waiting = false;
+	std::atomic<uint64_t> published{0}; // write_count, for the worker's spin without the lock
+	void wait_for_room(std::unique_lock<std::mutex> &holder, size_t count);
+	void publish();
 
 	std::vector<uint32_t> ring;
 	uint64_t write_count = 0;

@@ -154,7 +154,7 @@ CommandProcessor::CommandProcessor(Vulkan::Device &device_, void *rdram_ptr,
 #ifdef PARALLEL_RDP_SHADER_DIR
 				Granite::Global::create_thread_context(),
 #endif
-				this, 4 * 1024);
+				this, 64 * 1024); // Mupen64Plus PS5: was 4 * 1024 words; more room before the emulator waits for the worker
 	}
 
 	if (const char *env = getenv("PARALLEL_RDP_BENCH"))
@@ -894,6 +894,17 @@ void CommandProcessor::enqueue_command(unsigned num_words, const uint32_t *words
 		else
 			dump_writer->emit_command(cmd_id, words, num_words);
 	}
+}
+
+void CommandProcessor::enqueue_commands(size_t count, const uint32_t *framed)
+{
+	if (dump_writer || single_threaded_processing)
+	{
+		for (size_t i = 0; i < count; i += 1 + framed[i])
+			enqueue_command(framed[i], framed + i + 1);
+	}
+	else
+		ring.enqueue_commands(count, framed);
 }
 
 void CommandProcessor::enqueue_command_direct(unsigned, const uint32_t *words)

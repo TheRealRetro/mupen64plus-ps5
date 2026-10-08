@@ -134,8 +134,13 @@ public:
 	// Queues up state and drawing commands.
 	void enqueue_command(unsigned num_words, const uint32_t *words);
 	void enqueue_command_direct(unsigned num_words, const uint32_t *words);
+	// Mupen64Plus PS5: a run of commands framed as (num_words, words...), queued in one go (CommandRing)
+	void enqueue_commands(size_t count, const uint32_t *framed);
 
 	void set_quirks(const Quirks &quirks);
+
+	// Mupen64Plus PS5: the ring's timing counters, for the plugin's report
+	CommandRing &get_command_ring() { return ring; }
 
 	// Interact with memory.
 	void *begin_read_rdram();

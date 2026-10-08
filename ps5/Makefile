@@ -384,13 +384,15 @@ PARALLEL_RDP_IMPLEMENTATION := third_party/parallel-rdp
 include $(PARALLEL_RDP_IMPLEMENTATION)/config.mk
 VULKAN_OBJ := $(patsubst %.cpp,$(PS5_OUT)/prdp/%.o,$(PARALLEL_RDP_SOURCES_CXX)) \
 	$(patsubst %.c,$(PS5_OUT)/prdp/%.o,$(PARALLEL_RDP_SOURCES_C)) $(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o
-$(PS5_OUT)/prdp/%.o: %.cpp
+# its headers, so a change to one rebuilds what includes it
+PRDP_HDRS := $(wildcard $(PARALLEL_RDP_IMPLEMENTATION)/*/*.hpp $(PARALLEL_RDP_IMPLEMENTATION)/*/*/*.hpp)
+$(PS5_OUT)/prdp/%.o: %.cpp $(PRDP_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(PARALLEL_RDP_CXXFLAGS) $(PARALLEL_RDP_INCLUDE_DIRS) -w -c -o $@ $<
 $(PS5_OUT)/prdp/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(PARALLEL_RDP_CFLAGS) $(PARALLEL_RDP_INCLUDE_DIRS) -w -c -o $@ $<
-$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS)
+$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS) $(PRDP_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PARALLEL_RDP_INCLUDE_DIRS) $(PORT_WARN) -c -o $@ $<
 $(APP_BUILD)/stubs/libSceAgc.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_canary_link_stub.c

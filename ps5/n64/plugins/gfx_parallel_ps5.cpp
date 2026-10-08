@@ -36,6 +36,11 @@ extern "C" {
 #include <memory>
 #include <string>
 
+#include <vector>
+
+#include <sys/stat.h>
+#include <unistd.h>
+
 extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char* name);
 
 namespace
@@ -70,6 +75,66 @@ struct Gpu
 };
 Gpu g_gpu;
 
+// paraLLEl-RDP's compiled pipelines, kept between starts in Vulkan's pipeline cache, saved when a game closes:
+// RADV's own disk cache stayed empty in this process (logs/vulkan.log showed the same compiles, up to 0.3 s
+// each, at every start).
+size_t g_saved_cache = 0;
+
+std::string PipelineCachePath()
+{
+	return OrbisDir("cache") + "/parallel-rdp-pipelines.bin";
+}
+
+void LoadPipelineCache(Vulkan::Device& device)
+{
+	std::vector<uint8_t> data;
+	if (FILE* f = fopen(PipelineCachePath().c_str(), "rb"))
+	{
+		fseek(f, 0, SEEK_END);
+		const long size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		if (size > 0)
+		{
+			data.resize(size_t(size));
+			if (fread(data.data(), 1, data.size(), f) != data.size())
+				data.clear();
+		}
+		fclose(f);
+	}
+	const bool ok = device.init_pipeline_cache(data.empty() ? nullptr : data.data(), data.size());
+	g_saved_cache = data.size();
+	OrbisLog("[gpu] pipeline cache: %zu KiB from %s%s", data.size() >> 10, PipelineCachePath().c_str(),
+		ok ? "" : " (not usable, starting a new one)");
+}
+
+void SavePipelineCache()
+{
+	if (!g_gpu.device)
+		return;
+	const size_t size = g_gpu.device->get_pipeline_cache_size();
+	if (size == 0 || size == g_saved_cache)
+		return;
+	std::vector<uint8_t> data(size);
+	if (!g_gpu.device->get_pipeline_cache_data(data.data(), data.size()))
+		return;
+	OrbisMkdirs(OrbisDir("cache"));
+	const std::string path = PipelineCachePath();
+	const std::string tmp = path + ".part";
+	FILE* f = fopen(tmp.c_str(), "wb");
+	if (!f)
+		return;
+	const bool ok = fwrite(data.data(), 1, data.size(), f) == data.size();
+	fclose(f);
+	chmod(tmp.c_str(), 0666); // reachable over FTP
+	if (ok && rename(tmp.c_str(), path.c_str()) == 0)
+	{
+		g_saved_cache = size;
+		OrbisLog("[gpu] pipeline cache saved: %zu KiB", size >> 10);
+	}
+	else
+		unlink(tmp.c_str());
+}
+
 GFX_INFO l_Gfx;
 bool l_Initialized;
 bool l_RomOpen;
@@ -98,6 +163,20 @@ const unsigned kCmdLength[64] = {
 	1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 };
+
+// commands on their way to paraLLEl-RDP, framed as its ring wants them (num_words, words...): handed over
+// in one go per list (and before each SyncFull), since a lock + wake-up per command took ~9 ms per VI in
+// GoldenEye on the PS5
+constexpr size_t kBatchWords = 8192; // well under the ring's 64K words
+uint32_t l_Batch[kBatchWords];
+size_t l_BatchLen;
+
+void FlushBatch()
+{
+	if (l_BatchLen && l_Rdp)
+		l_Rdp->enqueue_commands(l_BatchLen, l_Batch);
+	l_BatchLen = 0;
+}
 
 RDP::CommandProcessorFlags Flags(int upscale)
 {
@@ -201,13 +280,22 @@ void ProcessRDPList()
 		if (l_CmdPtr - l_CmdCur - cmd_length < 0)
 		{
 			*l_Gfx.DPC_START_REG = *l_Gfx.DPC_CURRENT_REG = *l_Gfx.DPC_END_REG;
+			FlushBatch();
 			n64ps5_perf_add(N64PS5_PERF_RDP, n64ps5_perf_now() - t0);
 			return;
 		}
 		if (command >= 8 && l_Rdp)
-			l_Rdp->enqueue_command(unsigned(cmd_length) * 2, &l_CmdData[2 * l_CmdCur]);
+		{
+			const size_t words = size_t(cmd_length) * 2;
+			if (l_BatchLen + 1 + words > kBatchWords)
+				FlushBatch();
+			l_Batch[l_BatchLen++] = uint32_t(words);
+			memcpy(&l_Batch[l_BatchLen], &l_CmdData[2 * l_CmdCur], words * 4);
+			l_BatchLen += words;
+		}
 		if (RDP::Op(command) == RDP::Op::SyncFull)
 		{
+			FlushBatch();
 			// the game waits for the RDP here: let the GPU finish what came before (GPU sync "Accurate");
 			// "Fast" lets the game go on while the GPU works, which most games don't notice
 			if (l_Rdp && l_Options.gpu_sync)
@@ -222,6 +310,7 @@ void ProcessRDPList()
 		}
 		l_CmdCur += cmd_length;
 	}
+	FlushBatch();
 	l_CmdPtr = 0;
 	l_CmdCur = 0;
 	*l_Gfx.DPC_START_REG = *l_Gfx.DPC_CURRENT_REG = *l_Gfx.DPC_END_REG;
@@ -273,6 +362,7 @@ void RomClosed()
 	l_Rdp.reset();
 	if (g_gpu.device)
 		g_gpu.device->wait_idle();
+	SavePipelineCache();
 }
 
 void ShowCFB()
@@ -291,6 +381,14 @@ void Report()
 		const double vis = l_Stats.vis;
 		OrbisLog("[gpu] per VI: %.2f syncs, %.2f ms waiting for them, %.2f ms waiting for the picture",
 			l_Stats.syncs / vis, l_Stats.sync_ticks * tick_ms / vis, l_Stats.scanout_ticks * tick_ms / vis);
+		if (l_Rdp)
+		{
+			RDP::CommandRing& ring = l_Rdp->get_command_ring();
+			const uint64_t batches = ring.batches.exchange(0), words = ring.words_in.exchange(0);
+			OrbisLog("[gpu] per VI: %.0f command words in %.1f batches, %.1f wake-ups; worker busy %.2f ms, emulator "
+				"waiting for room %.2f ms", words / vis, batches / vis, ring.wakeups.exchange(0) / vis,
+				ring.worker_busy_ticks.exchange(0) * tick_ms / vis, ring.producer_wait_ticks.exchange(0) * tick_ms / vis);
+		}
 		g_gpu.device->timestamp_log([](const std::string& tag, const Vulkan::TimestampIntervalReport& r) {
 			if (r.time_per_frame_context > 0.0001)
 				OrbisLog("[gpu]   GPU %s: %.3f ms per frame (%.1f times)", tag.c_str(), r.time_per_frame_context * 1e3,
@@ -435,10 +533,6 @@ extern "C" bool n64ps5_gpu_available(void)
 		return g_gpu.device != nullptr;
 	g_gpu.tried = true;
 	Util::set_thread_logging_interface(&g_logger);
-	// RADV keeps the shaders it compiled (paraLLEl-RDP's) here, so later starts skip compiling them
-	const std::string cache = OrbisDir("cache") + "/radv";
-	OrbisMkdirs(cache);
-	setenv("MESA_SHADER_CACHE_DIR", cache.c_str(), 1);
 	// GPU timestamps around paraLLEl-RDP's work, for Report (test builds)
 	setenv("PARALLEL_RDP_BENCH", "2", 1);
 
@@ -460,8 +554,9 @@ extern "C" bool n64ps5_gpu_available(void)
 		OrbisLog("[gpu] no VK_EXT_external_memory_host: paraLLEl-RDP can't share RDRAM with the GPU");
 		return false;
 	}
+	LoadPipelineCache(*device);
 	g_gpu.context = std::move(context);
 	g_gpu.device = std::move(device);
-	OrbisLog("[gpu] Vulkan device ready for paraLLEl-RDP (shader cache %s)", cache.c_str());
+	OrbisLog("[gpu] Vulkan device ready for paraLLEl-RDP");
 	return true;
 }
