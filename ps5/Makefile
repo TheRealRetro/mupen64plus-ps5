@@ -32,7 +32,7 @@
 PS5_PAYLOAD_SDK ?= /opt/ps5-payload-sdk
 PS5_HOST ?= ps5
 PS5_PORT ?= 9021
-VERSION ?= 0.6.3
+VERSION ?= 0.7.0
 # param.json's contentVersion, NN.NNN.NNN (0.6.1 -> 00.006.001): the release tag, as in the Homebrew Browser; it
 # must also be written in app/sce_sys/param.json (checked below)
 CONTENT_VERSION := $(shell echo $(VERSION) | awk -F. '{printf "%02d.%03d.%03d", $$1, $$2, $$3}')
