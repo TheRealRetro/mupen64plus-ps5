@@ -3,8 +3,9 @@
 # Mupen64Plus PS5
 
 **mupen64plus-core 2.6.0, the Nintendo 64 emulator, as a native PS5 home-screen app** for jailbroken consoles:
-a game shelf with box art, DualSense support with rumble, save states, and the x86-64 dynarec, so games like
-GoldenEye 007 and Donkey Kong 64 run at full speed.
+a game shelf with box art, DualSense support with rumble, save states, the x86-64 dynarec, and a GPU renderer
+(paraLLEl-RDP on Vulkan) with up to 8x internal resolution, so games like GoldenEye 007, Perfect Dark and
+Donkey Kong 64 run at full speed in HD.
 
 ![The game shelf on the PS5](docs/screenshot-shelf.jpg)
 
@@ -55,8 +56,12 @@ For a crash or a bug, please [open an issue](../../issues) and attach `/data/mup
 build-native.bat              build-native\PPSA99064\ + Mupen64PlusPS5.zip (+ .debug.elf)
 build-native.bat Ffpfsc       also a compressed .ffpfsc image
 build-native.bat Clean        from scratch (nothing reused from earlier builds)
+build-native.bat Cpu          without the GPU renderer, in build-native-cpu\
 release.bat                   clean build, then publish a GitHub release
 ```
+
+The GPU renderer needs RADV built first (mihawk-99/PS5_Vulkan, in WSL `/root/gpu/PS5_Vulkan`): see
+[ps5/README.md](ps5/README.md#building).
 
 Releasing:
 

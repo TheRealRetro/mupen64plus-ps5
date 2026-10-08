@@ -3,7 +3,7 @@ rem Builds the PS5 native application (Mupen64Plus PS5, PPSA99064) through WSL (
 rem   build-native.bat           app folder + zip in build-native\
 rem   build-native.bat Ffpfsc    also a compressed .ffpfsc image
 rem   build-native.bat Clean     from scratch (deletes ps5\build first); release.bat always does this
-rem   build-native.bat Vulkan    the GPU renderer test build, in build-native-vulkan\ (see ps5\Makefile, VULKAN)
+rem   build-native.bat Cpu       without the GPU renderer (angrylion only), in build-native-cpu\ (ps5\Makefile, VULKAN)
 rem See ps5\README.md (Building) for the WSL setup.
 setlocal
 set "N64_DIR=%~dp0"

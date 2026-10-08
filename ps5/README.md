@@ -61,21 +61,19 @@ with tables of functions looked up by name.
 |---|---|
 | CPU (VR4300) | mupen64plus-core's **x86-64 new dynarec** when the console gives executable memory (`n64/core/jit_ps5.c`), else its cached interpreter |
 | RSP | **mupen64plus-rsp-hle** for audio, MP3 and JPEG tasks (`n64/plugins/rsp_hle_ps5.c`), **mupen64plus-rsp-cxd4** for the rest: low level, it runs the game's own microcode, graphics included (`n64/plugins/rsp_cxd4_ps5.c`) |
-| RDP + VI | **angrylion-rdp-plus**: software, pixel-accurate, 6 render threads (`n64/plugins/gfx_ps5.c`) |
+| RDP + VI | **paraLLEl-RDP** on the GPU through Vulkan (RADV), at 1x-8x internal resolution (`n64/plugins/gfx_parallel_ps5.cpp`, default), or **angrylion-rdp-plus**: software, pixel-accurate, on 6 CPU threads (`n64/plugins/gfx_ps5.c`) |
 | Audio | `n64/plugins/audio_ps5.cpp`: AI samples resampled to 48 kHz, into `libSceAudioOut` |
 | Input | `n64/plugins/input_ps5.cpp`: `libScePad`, rumble through `scePadSetVibration` |
-| Picture | `ProsperoVideo`: angrylion's frame scaled (4:3 / integer / stretch, sharp or smooth) and tiled into `libSceVideoOut` |
+| Picture | `ProsperoVideo`: the renderer's frame scaled (4:3 / integer / stretch, sharp or smooth) and tiled into `libSceVideoOut` |
 
-angrylion renders on the CPU at the N64's own resolution, which the PS5's eight Zen 2 cores can afford.
-
-A GPU renderer, paraLLEl-RDP with a higher internal resolution, is being worked on (GitHub issue #1). PS5 homebrew
-now has a Vulkan driver: RADV, Mesa's driver for AMD GPUs, as mihawk-99/PS5_Vulkan builds it for the console.
-`make native VULKAN=1` (or `build-native.bat Vulkan`) links it into a test build, in `build-native-vulkan/`, that
-runs a Vulkan self-test at start (`coreorbis/orbis-shims/ProsperoVulkan.h`). It needs PS5_Vulkan checked out with
-its RADV archive built (`PS5_VULKAN`, default `/root/gpu/PS5_Vulkan`: `tools/setup-native-dependencies.sh`, then
-`tools/build-radv.sh release`). On the console (2026-10-07) the self-test passed every check: the device, a compute
-shader, the GPU writing memory the app allocated as it allocates RDRAM, and every feature paraLLEl-RDP uses; Super
-Mario 64 then ran at full speed in the same build.
+**The GPU renderer.** PS5 homebrew has a Vulkan driver: RADV, Mesa's driver for AMD GPUs, as
+mihawk-99/PS5_Vulkan builds it for the console; the app links it in (`eboot.bin` grows from ~4 MB to ~30 MB) and
+runs a short self-test at start (`coreorbis/orbis-shims/ProsperoVulkan.h`, results in `boot.log`).
+paraLLEl-RDP, the renderer RetroArch uses, runs the N64's RDP commands as compute shaders, reading and writing
+the emulator's RDRAM directly (`VK_EXT_external_memory_host`), and draws at up to 8x the N64's resolution. The
+picture is read back and shown like angrylion's. Its compiled shaders are kept in
+`/data/mupen64plus/cache/parallel-rdp-pipelines.bin`. If Vulkan doesn't work, the app falls back to angrylion,
+which renders on the CPU at the N64's own resolution.
 
 **What the core needs from SDL, libpng and dlopen is replaced:**
 
@@ -162,12 +160,15 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | Smooth scaling | bilinear (on) or sharp pixels |
 | N64 video filter * | the N64's own VI filter (anti-aliasing, dither filter) |
 | Hide overscan * | crops the black border the N64 draws around the picture |
+| Renderer * | GPU (paraLLEl-RDP, default) or CPU (angrylion, pixel-accurate at the N64's resolution) |
+| Internal resolution * | GPU renderer: 1x (native), 2x, 4x (default), 8x |
+| GPU sync * | GPU renderer: Accurate (default: waits for the GPU wherever the game waits for the RDP) or Fast (may glitch) |
 | CPU core * | Dynarec (default, when the console allows it) or Interpreter (slower; for a game the dynarec gets wrong) |
 | Audio processing * | Fast (HLE, default): rsp-hle does the RSP's audio work; Accurate (LLE): cxd4 runs the game's audio microcode (slower; for a game whose sound HLE gets wrong) |
-| Render threads * | angrylion workers: 1–12, default 6 |
+| Render threads * | CPU renderer (angrylion) workers: 1–12, default 6 |
 | Controller pak * | Controller Pak (default), Rumble Pak, none |
 | Stick dead zone | 0–30% |
-| Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (angrylion's rasteriser, incl. waiting for its threads), `vi` (its VI filter), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
+| Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (the renderer: angrylion's rasteriser incl. waiting for its threads, or handing commands to the GPU), `vi` (the VI filter, or reading the GPU's picture back), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
 | Sound, Download covers | |
 | Check for updates | ask at start-up when a newer GitHub release exists (see [Updates](#updates)) |
 
@@ -228,7 +229,11 @@ At every start, before it asks for `/data` (the console's HTTPS works only then,
 Requirements:
 
 - the [ps5-payload-dev SDK](https://github.com/ps5-payload-dev/sdk), v0.42 or newer;
-- clang and lld 18, g++, and python3 (plus Pillow and numpy only to redraw the art).
+- clang and lld 18, g++, glslang (`glslangValidator`), and python3 (plus Pillow and numpy only to redraw the art);
+- for the GPU renderer, [mihawk-99/PS5_Vulkan](https://github.com/mihawk-99/PS5_Vulkan) with its RADV archive
+  built: check it out (`PS5_VULKAN`, default `/root/gpu/PS5_Vulkan`), run its
+  `tools/setup-native-dependencies.sh`, then `tools/build-radv.sh release` (meson 1.12 or newer). Without it,
+  build with `VULKAN=0` (`build-native.bat Cpu`): the same app with the CPU renderer only, in `build-native-cpu/`.
 
 zlib is vendored.
 
@@ -237,6 +242,8 @@ From Windows, as the Homebrew Browser's build (WSL Ubuntu-24.04, the SDK of `/ro
 ```
 build-native.bat              app folder + zip
 build-native.bat Ffpfsc       also a compressed .ffpfsc image
+build-native.bat Clean        from scratch (release.bat always does this)
+build-native.bat Cpu          without the GPU renderer, in build-native-cpu/
 ```
 
 Output in `build-native/` (next to `ps5/`):
@@ -252,7 +259,7 @@ By hand:
 ```sh
 export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
 cd ps5
-make native -j$(nproc)           # ../build-native/ as above (FORMAT=Ffpfsc for the image)
+make native -j$(nproc)           # ../build-native/ as above (FORMAT=Ffpfsc for the image; VULKAN=0: no GPU renderer)
 make ps5 -j$(nproc)              # build/ps5/Mupen64PS5.elf (installer + helper, with the app inside)
 make send PS5_HOST=192.168.0.10  # sends it to the ELF loader (port 9021)
 make dist                        # make native + build/dist/Mupen64PS5-v<version>.elf (optional installer)

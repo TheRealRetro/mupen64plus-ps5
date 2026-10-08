@@ -1,6 +1,7 @@
 # Build output
 build-native/
 build-native-vulkan/
+build-native-cpu/
 ps5/build/
 ps5/proto/native/build/
 *.o

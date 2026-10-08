@@ -43,16 +43,20 @@ GITHUB_REPO ?= TheRealRetro/mupen64plus-ps5
 # versions' updater wrote files without execute permission and left the app unable to start: under this name
 # they never find a newer release, so they can't break themselves (their users install 0.6.3 by hand once).
 RELEASE_ZIP := Mupen64PlusPS5.zip
-# The GPU renderer work (GitHub issue #1, internal resolution): `make native VULKAN=1` links RADV, the Vulkan
-# driver mihawk-99/PS5_Vulkan builds for the console (in $(PS5_VULKAN): tools/setup-native-dependencies.sh, then
-# tools/build-radv.sh release), and runs the Vulkan self-test at start (coreorbis/orbis-shims/ProsperoVulkan.h).
-# It builds in folders of its own and puts the app in ../build-native-vulkan/.
+# The GPU renderer (paraLLEl-RDP, setting Renderer; GitHub issue #1): the app links RADV, the Vulkan driver
+# mihawk-99/PS5_Vulkan builds for the console (in $(PS5_VULKAN): tools/setup-native-dependencies.sh, then
+# tools/build-radv.sh release), and runs a Vulkan self-test at start (coreorbis/orbis-shims/ProsperoVulkan.h).
+# VULKAN=0 builds the app without it (angrylion only, eboot.bin ~4 MB instead of ~30 MB) in folders of its own,
+# with the app in ../build-native-cpu/. The host build never has it.
+ifneq ($(filter host%,$(MAKECMDGOALS)),)
 VULKAN ?= 0
+endif
+VULKAN ?= 1
 PS5_VULKAN ?= /root/gpu/PS5_Vulkan
 ifeq ($(VULKAN),1)
-APP_BUILD := build/app-vulkan
-else
 APP_BUILD := build/app
+else
+APP_BUILD := build/app-cpu
 endif
 APP_OUT := $(APP_BUILD)/$(TITLE_ID)
 
@@ -166,9 +170,9 @@ PORT_HDRS := $(wildcard coreorbis/include-orbis/*.h coreorbis/orbis-shims/*.h fr
 PS5_CC  := $(PS5_PAYLOAD_SDK)/bin/prospero-clang
 PS5_CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
 ifeq ($(VULKAN),1)
-PS5_OUT := build/ps5-vulkan
-else
 PS5_OUT := build/ps5
+else
+PS5_OUT := build/ps5-cpu
 endif
 # The PS5's CPU is Zen 2 (PS5SX2 builds with the same -march).
 PS5_OPT := -O3 -fPIC -march=znver2 -fno-strict-aliasing
@@ -300,9 +304,9 @@ strip: $(PS5_OUT)/Mupen64PS5-stripped.elf
 #   $(TITLE_ID).ffpfsc      with FORMAT=Ffpfsc: a compressed image of the folder (the boilerplate's mkpfs)
 #   release-assets/$(CONTENT_VERSION)/$(RELEASE_ZIP)   a copy kept per version
 ifeq ($(VULKAN),1)
-NATIVE_OUT := ../build-native-vulkan
-else
 NATIVE_OUT := ../build-native
+else
+NATIVE_OUT := ../build-native-cpu
 endif
 FORMAT ?= Folder
 PS5_NATIVE_BOILERPLATE ?= /root/ps5-native
@@ -383,6 +387,12 @@ $(APP_BUILD)/app_crt.o $(APP_BUILD)/app_cpp_runtime.o: $(APP_BUILD)/%.o: $(NATIV
 # VULKAN=1: RADV and what it needs (tools/radv-link-flags.sh prints PS5_Vulkan's recipe), and link stubs that
 # name the AGC system modules it calls (PS5_Vulkan's tools/build-radv-title.sh builds the same two)
 ifeq ($(VULKAN),1)
+ifeq ($(filter host% clean,$(MAKECMDGOALS)),)
+ifeq ($(wildcard $(RADV)/lib/libvulkan_radeon.ps5.a),)
+$(error RADV is missing ($(RADV)/lib/libvulkan_radeon.ps5.a): check out mihawk-99/PS5_Vulkan in PS5_VULKAN \
+	and run its tools/setup-native-dependencies.sh and tools/build-radv.sh release, or build with VULKAN=0)
+endif
+endif
 VULKAN_STUBS := $(APP_BUILD)/stubs/libSceAgc.so $(APP_BUILD)/stubs/libSceAgcDriver.so
 VULKAN_LINK := $$(bash tools/radv-link-flags.sh $(PS5_VULKAN))
 # the RADV archive has zlib built in (its shader cache), which stands in for ours
