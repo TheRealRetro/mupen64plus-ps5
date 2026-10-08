@@ -762,16 +762,25 @@ void ShowBusy(const std::string& text)
 
 void MessageBox(const std::string& title, const std::string& text)
 {
+	// laid out as Confirm: the text wrapped over as many lines as it needs
+	const int bw = 1400, max_lines = 14, line_h = 38;
+	std::vector<std::string> lines = WrapText(text, 3, bw - 80);
+	if (int(lines.size()) > max_lines)
+	{
+		lines.resize(max_lines);
+		lines.back() = "...";
+	}
+	const int bh = 130 + int(lines.size()) * line_h + 100;
 	NavReader nav;
 	for (;;)
 	{
 		Header("");
-		const int bw = 1400, bh = 300;
-		const int bx = (W - bw) / 2, by = (H - bh) / 2;
+		const int bx = (W - bw) / 2, by = std::max(170, (H - bh) / 2);
 		ps5video::FillRect(bx - 4, by - 4, bw + 8, bh + 8, kAccent);
 		ps5video::FillRect(bx, by, bw, bh, kPanel);
 		DrawText(bx + 40, by + 30, FitText(title, 5, bw - 80).c_str(), 5, kAccent);
-		DrawText(bx + 40, by + 130, FitText(text, 3, bw - 80).c_str(), 3, kText);
+		for (size_t i = 0; i < lines.size(); i++)
+			DrawText(bx + 40, by + 120 + int(i) * line_h, lines[i].c_str(), 3, kText);
 		DrawText(bx + 40, by + bh - 70, (std::string(icon::Cross) + " OK").c_str(), 3, kDim);
 		Present();
 		const Nav n = nav.Read();

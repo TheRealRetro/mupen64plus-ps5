@@ -21,6 +21,9 @@
 #include "ProsperoNotify.h"
 #include "ProsperoSce.h"
 #include "ProsperoVideo.h"
+#ifdef N64PS5_VULKAN
+#include "ProsperoVulkan.h"
+#endif
 
 #include "fe_emu.h"
 #include "fe_covers.h"
@@ -148,6 +151,14 @@ int Run(int argc, char** argv)
 		ps5video::Shutdown();
 		return 2;
 	}
+
+#ifdef N64PS5_VULKAN
+	// the Vulkan test build (make VULKAN=1): the GPU renderer's first step, results on screen and in boot.log
+	N64_STAGE(Boot, "vulkan self-test");
+	fe::ShowBusy("Testing the GPU (Vulkan)...");
+	const ps5vulkan::ProbeResult vk = ps5vulkan::Probe();
+	fe::MessageBox("Vulkan self-test", vk.summary + "\nDetails are in " + OrbisRoot() + "/logs/boot.log");
+#endif
 
 	N64_STAGE(Boot, "update");
 	fe::OfferUpdate(update, fe::Config().updates);

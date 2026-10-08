@@ -43,7 +43,18 @@ GITHUB_REPO ?= TheRealRetro/mupen64plus-ps5
 # versions' updater wrote files without execute permission and left the app unable to start: under this name
 # they never find a newer release, so they can't break themselves (their users install 0.6.3 by hand once).
 RELEASE_ZIP := Mupen64PlusPS5.zip
-APP_OUT := build/app/$(TITLE_ID)
+# The GPU renderer work (GitHub issue #1, internal resolution): `make native VULKAN=1` links RADV, the Vulkan
+# driver mihawk-99/PS5_Vulkan builds for the console (in $(PS5_VULKAN): tools/setup-native-dependencies.sh, then
+# tools/build-radv.sh release), and runs the Vulkan self-test at start (coreorbis/orbis-shims/ProsperoVulkan.h).
+# It builds in folders of its own and puts the app in ../build-native-vulkan/.
+VULKAN ?= 0
+PS5_VULKAN ?= /root/gpu/PS5_Vulkan
+ifeq ($(VULKAN),1)
+APP_BUILD := build/app-vulkan
+else
+APP_BUILD := build/app
+endif
+APP_OUT := $(APP_BUILD)/$(TITLE_ID)
 
 M64 := ../mupen64plus-core
 M64SRC := $(M64)/src
@@ -115,6 +126,10 @@ DEFS := -DN64PS5_VERSION='"$(VERSION)"' -DN64PS5_TITLE_ID='"$(TITLE_ID)"' \
 	-DN64PS5_CONTENT_VERSION='"$(CONTENT_VERSION)"' -DN64PS5_GITHUB_REPO='"$(GITHUB_REPO)"' \
 	-DN64PS5_RELEASE_ZIP='"$(RELEASE_ZIP)"'
 PORT_WARN := -Wall -Wextra -Werror -Wno-unused-parameter -Wno-missing-field-initializers
+ifeq ($(VULKAN),1)
+VULKAN_SRC := coreorbis/orbis-shims/ProsperoVulkan.cpp
+DEFS += -DN64PS5_VULKAN
+endif
 
 # generated: the game-name table (from the core's ROM catalog) built into fe_games.o
 GEN := build/gen
@@ -146,7 +161,11 @@ PORT_HDRS := $(wildcard coreorbis/include-orbis/*.h coreorbis/orbis-shims/*.h fr
 # ---------------- PS5 ----------------
 PS5_CC  := $(PS5_PAYLOAD_SDK)/bin/prospero-clang
 PS5_CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
+ifeq ($(VULKAN),1)
+PS5_OUT := build/ps5-vulkan
+else
 PS5_OUT := build/ps5
+endif
 # The PS5's CPU is Zen 2 (PS5SX2 builds with the same -march).
 PS5_OPT := -O3 -fPIC -march=znver2 -fno-strict-aliasing
 # the payloads: notifications, and the kernel access the helper needs (libkernel_sys: sceKernelGetAppInfo)
@@ -157,7 +176,7 @@ PS5_CORE_OBJ := $(patsubst %.c,$(PS5_OUT)/m64/%.o,$(CORE_SRC)) $(patsubst %.c,$(
 	$(patsubst %.c,$(PS5_OUT)/n64/%.o,$(N64_SRC)) \
 	$(patsubst %.c,$(PS5_OUT)/n64/%.o,$(PLUGIN_C_SRC)) $(patsubst %.cpp,$(PS5_OUT)/n64/%.o,$(PLUGIN_CXX_SRC)) \
 	$(patsubst %.c,$(PS5_OUT)/angrylion/%.o,$(ANGRYLION_C_SRC)) $(patsubst %.cpp,$(PS5_OUT)/angrylion/%.o,$(ANGRYLION_CXX_SRC))
-PS5_EMU_OBJ := $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(EMU_SRC))
+PS5_EMU_OBJ := $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(EMU_SRC) $(VULKAN_SRC))
 PS5_HELPER_OBJ := $(PS5_OUT)/port/installer/helper_main.o $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(HELPER_SRC))
 PS5_INSTALLER_OBJ := $(patsubst %.cpp,$(PS5_OUT)/port/%.o,$(INSTALLER_SRC))
 PS5_ZLIB_OBJ := $(patsubst $(ZLIB)/%.c,$(PS5_OUT)/zlib/%.o,$(ZLIB_SRC))
@@ -216,6 +235,17 @@ $(PS5_OUT)/port/%.o: %.cpp $(PORT_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PORT_WARN) $(EXTRA_FLAGS) -c -o $@ $<
 
+# the Vulkan self-test (VULKAN=1): RADV's headers, and its compute shader compiled to SPIR-V
+RADV := $(PS5_VULKAN)/.deps/native/radv-release
+$(PS5_OUT)/gen/probe_comp.h: coreorbis/orbis-shims/shaders/probe.comp
+	@mkdir -p $(dir $@)
+	glslangValidator -V --target-env vulkan1.1 --vn kProbeComp -o $@ $< > /dev/null
+
+$(PS5_OUT)/port/coreorbis/orbis-shims/ProsperoVulkan.o: coreorbis/orbis-shims/ProsperoVulkan.cpp \
+		$(PS5_OUT)/gen/probe_comp.h $(PORT_HDRS)
+	@mkdir -p $(dir $@)
+	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) -I$(RADV)/include -I$(PS5_OUT)/gen $(PORT_WARN) -c -o $@ $<
+
 $(PS5_OUT)/port/installer/helper_main.o: installer/installer_main.cpp $(PORT_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PORT_WARN) $(EXTRA_FLAGS) -c -o $@ $<
@@ -260,15 +290,19 @@ strip: $(PS5_OUT)/Mupen64PS5-stripped.elf
 #   $(TITLE_ID).debug.elf   eboot.bin's program with its symbols, for reading crash reports
 #   $(TITLE_ID).ffpfsc      with FORMAT=Ffpfsc: a compressed image of the folder (the boilerplate's mkpfs)
 #   release-assets/$(CONTENT_VERSION)/$(RELEASE_ZIP)   a copy kept per version
+ifeq ($(VULKAN),1)
+NATIVE_OUT := ../build-native-vulkan
+else
 NATIVE_OUT := ../build-native
+endif
 FORMAT ?= Folder
 PS5_NATIVE_BOILERPLATE ?= /root/ps5-native
-native: $(APP_FILES) build/app/mupen64plus-pie.elf
+native: $(APP_FILES) $(APP_BUILD)/mupen64plus-pie.elf
 	@mkdir -p "$(abspath $(NATIVE_OUT))"
 	rm -rf "$(abspath $(NATIVE_OUT))/$(TITLE_ID)" "$(abspath $(NATIVE_OUT))/$(RELEASE_ZIP)"
 	cp -r $(APP_OUT) "$(abspath $(NATIVE_OUT))/"
 	cd "$(abspath $(NATIVE_OUT))" && python3 -m zipfile -c $(RELEASE_ZIP) $(TITLE_ID)
-	cp build/app/mupen64plus-pie.elf "$(abspath $(NATIVE_OUT))/$(TITLE_ID).debug.elf"
+	cp $(APP_BUILD)/mupen64plus-pie.elf "$(abspath $(NATIVE_OUT))/$(TITLE_ID).debug.elf"
 	mkdir -p "$(abspath $(NATIVE_OUT))/release-assets/$(CONTENT_VERSION)"
 	cp "$(abspath $(NATIVE_OUT))/$(RELEASE_ZIP)" "$(abspath $(NATIVE_OUT))/release-assets/$(CONTENT_VERSION)/"
 	@if [ "$$(echo $(FORMAT) | tr A-Z a-z)" = ffpfsc ]; then \
@@ -332,28 +366,45 @@ $(APP_OUT)/sce_module/libc.prx: build/app/libc.prx
 
 app: $(APP_FILES)
 
-build/app/app_crt.o build/app/app_cpp_runtime.o: build/app/%.o: $(NATIVE)/tooling/native/%.cpp
+$(APP_BUILD)/app_crt.o $(APP_BUILD)/app_cpp_runtime.o: $(APP_BUILD)/%.o: $(NATIVE)/tooling/native/%.cpp
 	@mkdir -p $(dir $@)
 	$(NATIVE_CLANG) -std=c++20 -O2 -Wall -Wextra -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections \
 		-c -o $@ $<
 
-EBOOT_OBJS = build/app/app_crt.o build/app/app_cpp_runtime.o $(PS5_CORE_OBJ) $(PS5_EMU_OBJ) $(PS5_ZLIB_OBJ) \
+# VULKAN=1: RADV and what it needs (tools/radv-link-flags.sh prints PS5_Vulkan's recipe), and link stubs that
+# name the AGC system modules it calls (PS5_Vulkan's tools/build-radv-title.sh builds the same two)
+ifeq ($(VULKAN),1)
+VULKAN_STUBS := $(APP_BUILD)/stubs/libSceAgc.so $(APP_BUILD)/stubs/libSceAgcDriver.so
+VULKAN_LINK := $$(bash tools/radv-link-flags.sh $(PS5_VULKAN))
+# the RADV archive has zlib built in (its shader cache), which stands in for ours
+EBOOT_ZLIB :=
+$(APP_BUILD)/stubs/libSceAgc.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_canary_link_stub.c
+$(APP_BUILD)/stubs/libSceAgcDriver.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
+$(VULKAN_STUBS):
+	@mkdir -p $(dir $@)
+	$(NATIVE_CLANG) -std=c11 -O2 -fPIC -c -o $@.o $<
+	$(PS5_PAYLOAD_SDK)/bin/prospero-lld --shared -soname $(basename $(notdir $@)).prx -o $@ $@.o
+else
+EBOOT_ZLIB = $(PS5_ZLIB_OBJ)
+endif
+
+EBOOT_OBJS = $(APP_BUILD)/app_crt.o $(APP_BUILD)/app_cpp_runtime.o $(PS5_CORE_OBJ) $(PS5_EMU_OBJ) $(EBOOT_ZLIB) \
 	$(PS5_OUT)/helper_data.o
-build/app/mupen64plus-pie.elf: $(EBOOT_OBJS) $(NATIVE)/tooling/native/ps5-pie.ld $(NATIVE)/tooling/native/ehframe.ld \
-		$(NATIVE)/tooling/native/app-symbols.map $(NATIVE)/tooling/native/localize.map
+$(APP_BUILD)/mupen64plus-pie.elf: $(EBOOT_OBJS) $(NATIVE)/tooling/native/ps5-pie.ld $(NATIVE)/tooling/native/ehframe.ld \
+		$(NATIVE)/tooling/native/app-symbols.map $(NATIVE)/tooling/native/localize.map $(VULKAN_STUBS)
 	$(LLD) -m elf_x86_64 -pie -z max-page-size=0x4000 --hash-style=gnu \
 		-T $(NATIVE)/tooling/native/ps5-pie.ld -T $(NATIVE)/tooling/native/ehframe.ld --eh-frame-hdr \
 		--version-script $(NATIVE)/tooling/native/app-symbols.map --version-script $(NATIVE)/tooling/native/localize.map \
-		-e _start --no-dynamic-linker -o $@ $(EBOOT_OBJS) \
+		-e _start --no-dynamic-linker -o $@ $(EBOOT_OBJS) $(VULKAN_STUBS) $(VULKAN_LINK) \
 		--as-needed $(APP_STUBS) -L $(SDK_LIB) \
 		$(SDK_LIB)/libc++.a $(SDK_LIB)/libc++abi.a $(SDK_LIB)/libunwind.a $(SDK_LIB)/libc.a -lpthread
 
-build/app/eboot.elf: build/app/mupen64plus-pie.elf $(NATIVE_TOOL)
-	$(NATIVE_TOOL) link --in $< --out $@ --stub-dir $(SDK_LIB) --module-sdk 0x02000009 \
+$(APP_BUILD)/eboot.elf: $(APP_BUILD)/mupen64plus-pie.elf $(NATIVE_TOOL)
+	$(NATIVE_TOOL) link --in $< --out $@ --stub-dir $(SDK_LIB) $(addprefix --stub ,$(VULKAN_STUBS)) --module-sdk 0x02000009 \
 		--companion-sdk 0x08050001 --file-name eboot.elf
-	python3 tools/prepare_console_elf.py --input $@ --output build/app/eboot-console-ready.elf
+	python3 tools/prepare_console_elf.py --input $@ --output $(APP_BUILD)/eboot-console-ready.elf
 
-$(APP_OUT)/eboot.bin: build/app/eboot.elf $(NATIVE_TOOL)
+$(APP_OUT)/eboot.bin: $(APP_BUILD)/eboot.elf $(NATIVE_TOOL)
 	@mkdir -p $(dir $@)
 	$(NATIVE_TOOL) self --sign --in $< --out $@ --magic 0x1D3D154F
 	$(NATIVE_TOOL) self --inspect --file $@

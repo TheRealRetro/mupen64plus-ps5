@@ -66,8 +66,16 @@ with tables of functions looked up by name.
 | Input | `n64/plugins/input_ps5.cpp`: `libScePad`, rumble through `scePadSetVibration` |
 | Picture | `ProsperoVideo`: angrylion's frame scaled (4:3 / integer / stretch, sharp or smooth) and tiled into `libSceVideoOut` |
 
-PS5 homebrew has no OpenGL or Vulkan driver, so hardware renderers (GLideN64, paraLLEl-RDP) can't be used.
-angrylion renders on the CPU, which the PS5's eight Zen 2 cores can afford.
+angrylion renders on the CPU at the N64's own resolution, which the PS5's eight Zen 2 cores can afford.
+
+A GPU renderer, paraLLEl-RDP with a higher internal resolution, is being worked on (GitHub issue #1). PS5 homebrew
+now has a Vulkan driver: RADV, Mesa's driver for AMD GPUs, as mihawk-99/PS5_Vulkan builds it for the console.
+`make native VULKAN=1` (or `build-native.bat Vulkan`) links it into a test build, in `build-native-vulkan/`, that
+runs a Vulkan self-test at start (`coreorbis/orbis-shims/ProsperoVulkan.h`). It needs PS5_Vulkan checked out with
+its RADV archive built (`PS5_VULKAN`, default `/root/gpu/PS5_Vulkan`: `tools/setup-native-dependencies.sh`, then
+`tools/build-radv.sh release`). On the console (2026-10-07) the self-test passed every check: the device, a compute
+shader, the GPU writing memory the app allocated as it allocates RDRAM, and every feature paraLLEl-RDP uses; Super
+Mario 64 then ran at full speed in the same build.
 
 **What the core needs from SDL, libpng and dlopen is replaced:**
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # build-native.sh - builds the PS5 native application (runs in Linux / WSL), in the Homebrew Browser's layout.
 #
-# Usage (from WSL):  ps5/tools/build-native.sh [Folder|Ffpfsc] [Clean]
-# Windows:           build-native.bat [Folder|Ffpfsc] [Clean]
+# Usage (from WSL):  ps5/tools/build-native.sh [Folder|Ffpfsc] [Clean] [Vulkan]
+# Windows:           build-native.bat [Folder|Ffpfsc] [Clean] [Vulkan]
 #
 # Clean deletes ps5/build first, so nothing from an earlier build is reused. Releases always build clean
 # (release.bat): 0.6.1 was published from an incremental build that didn't start on the console, while a clean
@@ -10,6 +10,8 @@
 #
 # Output in build-native/ (next to ps5/): PPSA99064/, Mupen64PlusPS5.zip, PPSA99064.debug.elf, and PPSA99064.ffpfsc
 # with Ffpfsc. The version (param.json's contentVersion) comes from VERSION in ps5/Makefile.
+#
+# Vulkan builds the GPU renderer test build instead (make VULKAN=1, ps5/Makefile), into build-native-vulkan/.
 #
 # Environment:
 #   PS5_PAYLOAD_SDK         the ps5-payload-sdk (default: the boilerplate's, below)
@@ -19,11 +21,13 @@ set -euo pipefail
 ps5=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 format=Folder
 clean=0
+vulkan=0
 for arg in "$@"; do
     case "${arg,,}" in
         folder|ffpfsc) format=$arg ;;
         clean) clean=1 ;;
-        *) echo "usage: build-native.sh [Folder|Ffpfsc] [Clean]" >&2; exit 2 ;;
+        vulkan) vulkan=1 ;;
+        *) echo "usage: build-native.sh [Folder|Ffpfsc] [Clean] [Vulkan]" >&2; exit 2 ;;
     esac
 done
 bp=${PS5_NATIVE_BOILERPLATE:-/root/ps5-native}
@@ -35,4 +39,4 @@ if [[ $clean == 1 ]]; then
     echo "==> clean build: removing ps5/build"
     make clean
 fi
-make -j"$(nproc)" native FORMAT="$format" PS5_NATIVE_BOILERPLATE="$bp"
+make -j"$(nproc)" native FORMAT="$format" PS5_NATIVE_BOILERPLATE="$bp" VULKAN="$vulkan"
