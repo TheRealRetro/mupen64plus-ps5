@@ -50,7 +50,7 @@ For a crash or a bug, please [open an issue](../../issues) and attach `/data/mup
 
 - **[Mupen64Plus PS5 thread](https://raaproductions.ca/forum/showthread.php?tid=20)** on the RAAI Productions
   forum: questions, help and news.
-- **[raaproductions.ca](https://raaproductions.ca)**: my website.
+- **[raaproductions.ca](https://raaproductions.ca/ps5)**: my website.
 
 ## Documentation
 
