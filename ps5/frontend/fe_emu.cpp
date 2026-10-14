@@ -807,7 +807,7 @@ void ApplySettings()
 	const fe::Settings& cfg = fe::Config();
 	n64ps5_audio_set_mute(!cfg.audio);
 	n64ps5_audio_set_fast_forward(g.fast_forward.load());
-	const n64ps5_input_options in = {cfg.deadzone, 80, cfg.pak, cfg.invert_stick};
+	const n64ps5_input_options in = {cfg.deadzone, 80, cfg.pak, cfg.invert_stick, cfg.invert_c_stick};
 	n64ps5_input_set_options(&in);
 	ps5video::InvalidateN64();
 }

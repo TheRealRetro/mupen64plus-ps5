@@ -63,7 +63,8 @@ typedef struct
 	int deadzone; // percent of the stick's travel ignored around the centre (0..30)
 	int range; // N64 stick range at full tilt (the real stick reaches about 80)
 	int pak; // 0 none, 1 Controller Pak (memory), 2 Rumble Pak
-	int invert; // the analog stick's axes turned round: bit 0 X, bit 1 Y
+	int invert; // the analog stick's (left stick's) axes turned round: bit 0 X, bit 1 Y
+	int invert_c; // the C buttons' right stick turned round: bit 0 X (C-left/right), bit 1 Y (C-up/down)
 } n64ps5_input_options;
 
 void n64ps5_input_set_options(const n64ps5_input_options* opt);

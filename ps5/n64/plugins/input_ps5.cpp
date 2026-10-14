@@ -33,7 +33,7 @@ constexpr int kNumControllers = 4;
 
 bool g_init = false;
 CONTROL* g_controls = nullptr;
-n64ps5_input_options g_opt = {12, 80, 1, 0};
+n64ps5_input_options g_opt = {12, 80, 1, 0, 0};
 std::atomic<bool> g_block{false};
 
 // One stick axis (0..255, centre 128) -> -range..range, with a dead zone and a linear ramp after it.
@@ -133,15 +133,18 @@ void GetKeys(int control, BUTTONS* keys)
 	keys->L_TRIG = (b & SCE_PAD_BUTTON_L1) != 0;
 	keys->R_TRIG = (b & SCE_PAD_BUTTON_R1) != 0;
 
-	// C buttons: the right stick (half tilt), plus Triangle / Circle
-	keys->R_CBUTTON = p.rx > 192;
-	keys->L_CBUTTON = p.rx < 64;
-	keys->D_CBUTTON = p.ry > 192 || (b & SCE_PAD_BUTTON_CIRCLE) != 0;
-	keys->U_CBUTTON = p.ry < 64 || (b & SCE_PAD_BUTTON_TRIANGLE) != 0;
+	// C buttons: the right stick (half tilt), plus Triangle / Circle. Settings "Invert left stick" and
+	// "Invert right stick" (GitHub issue #3) turn the sticks' axes round; Triangle / Circle stay as they are.
+	const bool c_right = p.rx > 192, c_left = p.rx < 64, c_down = p.ry > 192, c_up = p.ry < 64;
+	const bool c_flip_x = (g_opt.invert_c & 1) != 0, c_flip_y = (g_opt.invert_c & 2) != 0;
+	keys->R_CBUTTON = c_flip_x ? c_left : c_right;
+	keys->L_CBUTTON = c_flip_x ? c_right : c_left;
+	keys->D_CBUTTON = (c_flip_y ? c_up : c_down) || (b & SCE_PAD_BUTTON_CIRCLE) != 0;
+	keys->U_CBUTTON = (c_flip_y ? c_down : c_up) || (b & SCE_PAD_BUTTON_TRIANGLE) != 0;
 
 	const int x = Axis(p.lx, g_opt.deadzone, g_opt.range);
 	const int y = -Axis(p.ly, g_opt.deadzone, g_opt.range); // the N64's Y grows upwards
-	keys->X_AXIS = (g_opt.invert & 1) ? -x : x; // setting "Invert stick" (GitHub issue #3)
+	keys->X_AXIS = (g_opt.invert & 1) ? -x : x;
 	keys->Y_AXIS = (g_opt.invert & 2) ? -y : y;
 }
 
