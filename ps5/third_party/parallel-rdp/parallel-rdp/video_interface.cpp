@@ -1351,8 +1351,13 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 		divot_image = std::move(aa_image);
 
 	// Scale pass
-	bool is_final_pass = !downscale_steps || scaling_factor <= 1;
 	bool serrate = (regs.status & VI_CONTROL_SERRATE_BIT) != 0;
+	// Mupen64Plus PS5: upscale_deinterlace (each field offset by its quarter line) used to run only after a
+	// downscale pass, so without downscaling (downscale_steps 0) interlaced pictures jumped half a line every
+	// frame (Indiana Jones' title screen, GitHub issue #2). It now runs whenever bob deinterlacing applies.
+	bool deinterlace_pass = serrate && options.upscale_deinterlacing;
+	bool downscale = downscale_steps && scaling_factor > 1;
+	bool is_final_pass = !downscale && !deinterlace_pass;
 
 	auto scale_image = scale_stage(*cmd, divot_image.get(),
 	                               regs, lines,
@@ -1361,7 +1366,7 @@ Vulkan::ImageHandle VideoInterface::scanout(VkImageLayout target_layout, const S
 
 	auto src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-	if (!is_final_pass && scale_image)
+	if (downscale && scale_image)
 	{
 		cmd->image_barrier(*scale_image, src_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		                   layout_to_stage(src_layout), layout_to_access(src_layout),

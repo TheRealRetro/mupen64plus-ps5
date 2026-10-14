@@ -420,9 +420,13 @@ void UpdateScreen()
 	opts.vi.dither_filter = filtered;
 	opts.vi.gamma_dither = filtered;
 	opts.vi.scale = true;
-	opts.blend_previous_frame = true;
-	opts.upscale_deinterlacing = false;
+	// interlaced pictures (Indiana Jones, Resident Evil 2, hi-res modes): each field upscaled on its own with
+	// the field's line offset ("bob"), as RetroArch does. Weave (upscale_deinterlacing off, which needs
+	// blend_previous_frame) combed everything that moves (GitHub issue #2); paraLLEl-RDP keeps it for tests.
+	opts.blend_previous_frame = false;
+	opts.upscale_deinterlacing = true;
 	opts.crop_overscan_pixels = l_Options.hide_overscan ? 8 : 0;
+	const bool interlaced = (*l_Gfx.VI_STATUS_REG & RDP::VI_CONTROL_SERRATE_BIT) != 0;
 	l_Rdp->scanout_async_buffer(l_Scanout, opts);
 
 	if (l_Scanout.width && l_Scanout.height && l_Scanout.fence)
@@ -434,6 +438,12 @@ void UpdateScreen()
 			g_gpu.device->map_host_buffer(*l_Scanout.buffer, Vulkan::MEMORY_ACCESS_READ_BIT));
 		n64ps5_perf_add(N64PS5_PERF_VI, n64ps5_perf_now() - t0);
 		const n64ps5_frame frame = {px, int(l_Scanout.width), int(l_Scanout.height), int(l_Scanout.width)};
+		static int s_logged = -1; // the last picture mode logged: 0 progressive, 1 interlaced
+		if (s_logged != int(interlaced))
+		{
+			s_logged = int(interlaced);
+			OrbisLog("[gpu] picture: %s, %dx%d", interlaced ? "interlaced" : "progressive", frame.width, frame.height);
+		}
 		n64ps5_on_vi(&frame);
 		g_gpu.device->unmap_host_buffer(*l_Scanout.buffer, Vulkan::MEMORY_ACCESS_READ_BIT);
 	}

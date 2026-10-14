@@ -426,6 +426,10 @@ endif
 
 EBOOT_OBJS = $(APP_BUILD)/app_crt.o $(APP_BUILD)/app_cpp_runtime.o $(PS5_CORE_OBJ) $(PS5_EMU_OBJ) $(EBOOT_ZLIB) \
 	$(VULKAN_OBJ) $(PS5_OUT)/helper_data.o
+# boot.log's "built <date> <time>" (__DATE__/__TIME__ in main-boot.cpp): recompiled whenever anything else in
+# eboot.bin changes, so the date always says which build is running
+MAIN_BOOT_O := $(PS5_OUT)/port/coreorbis/main-boot.o
+$(MAIN_BOOT_O): $(filter-out $(MAIN_BOOT_O),$(PS5_CORE_OBJ) $(PS5_EMU_OBJ) $(VULKAN_OBJ) $(PS5_OUT)/helper_data.o)
 $(APP_BUILD)/mupen64plus-pie.elf: $(EBOOT_OBJS) $(NATIVE)/tooling/native/ps5-pie.ld $(NATIVE)/tooling/native/ehframe.ld \
 		$(NATIVE)/tooling/native/app-symbols.map $(NATIVE)/tooling/native/localize.map $(VULKAN_STUBS)
 	$(LLD) -m elf_x86_64 -pie -z max-page-size=0x4000 --hash-style=gnu \

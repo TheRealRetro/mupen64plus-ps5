@@ -44,8 +44,9 @@ namespace
 using ps5video::Rgb;
 constexpr int W = ps5video::kWidth;
 constexpr int H = ps5video::kHeight;
-// Under the wordmark: what runs the games (the port's credits are in ps5/README.md).
-constexpr const char* kTagline = "Nintendo 64 - mupen64plus, angrylion RDP, cxd4 RSP";
+// Under the wordmark: what runs the games (the port's credits are in ps5/README.md). Short enough to end
+// before the middle cover (x ~580): the renderer names are in Settings.
+constexpr const char* kTagline = "Nintendo 64 - mupen64plus";
 
 // ---- camera and layout (world units: the middle cover is kCoverH tall at distance kCamDist) ----------
 constexpr float kFocal = 1000.0f;
