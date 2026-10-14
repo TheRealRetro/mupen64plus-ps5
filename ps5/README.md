@@ -168,6 +168,7 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | Render threads * | CPU renderer (angrylion) workers: 1–12, default 6 |
 | Controller pak * | Controller Pak (default), Rumble Pak, none |
 | Stick dead zone | 0–30% |
+| Invert stick | turns the analog stick's X (left/right), Y (up/down) or both round; Off by default |
 | Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (the renderer: angrylion's rasteriser incl. waiting for its threads, or handing commands to the GPU), `vi` (the VI filter, or reading the GPU's picture back), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
 | Sound, Download covers | |
 | Check for updates | ask at start-up when a newer GitHub release exists (see [Updates](#updates)) |

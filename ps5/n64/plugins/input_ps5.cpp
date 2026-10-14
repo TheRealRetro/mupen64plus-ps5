@@ -33,7 +33,7 @@ constexpr int kNumControllers = 4;
 
 bool g_init = false;
 CONTROL* g_controls = nullptr;
-n64ps5_input_options g_opt = {12, 80, 1};
+n64ps5_input_options g_opt = {12, 80, 1, 0};
 std::atomic<bool> g_block{false};
 
 // One stick axis (0..255, centre 128) -> -range..range, with a dead zone and a linear ramp after it.
@@ -139,8 +139,10 @@ void GetKeys(int control, BUTTONS* keys)
 	keys->D_CBUTTON = p.ry > 192 || (b & SCE_PAD_BUTTON_CIRCLE) != 0;
 	keys->U_CBUTTON = p.ry < 64 || (b & SCE_PAD_BUTTON_TRIANGLE) != 0;
 
-	keys->X_AXIS = Axis(p.lx, g_opt.deadzone, g_opt.range);
-	keys->Y_AXIS = -Axis(p.ly, g_opt.deadzone, g_opt.range); // the N64's Y grows upwards
+	const int x = Axis(p.lx, g_opt.deadzone, g_opt.range);
+	const int y = -Axis(p.ly, g_opt.deadzone, g_opt.range); // the N64's Y grows upwards
+	keys->X_AXIS = (g_opt.invert & 1) ? -x : x; // setting "Invert stick" (GitHub issue #3)
+	keys->Y_AXIS = (g_opt.invert & 2) ? -y : y;
 }
 
 // Raw joybus commands for this controller. Only the Rumble Pak's motor write is looked at:

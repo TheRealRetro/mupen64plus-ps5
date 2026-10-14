@@ -26,6 +26,7 @@ struct Settings
 	// controller
 	int pak = 1; // 0 none, 1 Controller Pak, 2 Rumble Pak
 	int deadzone = 12; // % of the stick's travel
+	int invert_stick = 0; // the analog stick's axes turned round: 0 off, 1 X, 2 Y, 3 X and Y
 	// misc
 	int state_slot = 0; // 0..9
 	bool covers_download = true; // fetch box art from libretro-thumbnails

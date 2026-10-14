@@ -269,6 +269,7 @@ enum SettingRow
 	S_THREADS,
 	S_PAK,
 	S_DEADZONE,
+	S_INVERT,
 	S_COVERS,
 	S_UPDATES,
 	S_COUNT
@@ -295,6 +296,7 @@ std::string SettingLabel(int s)
 		case S_THREADS: return "Render threads *";
 		case S_PAK: return "Controller pak *";
 		case S_DEADZONE: return "Stick dead zone";
+		case S_INVERT: return "Invert stick";
 		case S_COVERS: return "Download covers";
 		case S_UPDATES: return "Check for updates";
 		default: return "";
@@ -337,6 +339,11 @@ std::string SettingValue(int s)
 		case S_THREADS: snprintf(buf, sizeof(buf), "%d", c.render_threads); return buf;
 		case S_PAK: return PakName(c.pak);
 		case S_DEADZONE: snprintf(buf, sizeof(buf), "%d%%", c.deadzone); return buf;
+		case S_INVERT:
+		{
+			static const char* const kInvert[] = {"Off", "X (left/right)", "Y (up/down)", "X and Y"};
+			return kInvert[c.invert_stick & 3];
+		}
 		case S_COVERS: return YesNo(c.covers_download);
 		case S_UPDATES: return YesNo(c.updates);
 		default: return "";
@@ -393,6 +400,7 @@ void ChangeSetting(int s, int dir)
 			c.deadzone = Step(c.deadzone, dir, steps, 8);
 			break;
 		}
+		case S_INVERT: c.invert_stick = (c.invert_stick + dir + 4) & 3; break;
 		case S_COVERS: c.covers_download = !c.covers_download; break;
 		case S_UPDATES: c.updates = !c.updates; break;
 	}

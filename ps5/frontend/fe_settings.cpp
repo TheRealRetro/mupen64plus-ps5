@@ -78,6 +78,8 @@ void Settings::Load()
 			pak = Clamp(atoi(val), 0, 2);
 		else if (key == "deadzone")
 			deadzone = Clamp(atoi(val), 0, 30);
+		else if (key == "invert_stick")
+			invert_stick = Clamp(atoi(val), 0, 3);
 		else if (key == "state_slot")
 			state_slot = Clamp(atoi(val), 0, 9);
 		else if (key == "covers_download")
@@ -118,6 +120,7 @@ void Settings::Save() const
 	fprintf(f, "audio=%d\n", audio ? 1 : 0);
 	fprintf(f, "pak=%d\n", pak);
 	fprintf(f, "deadzone=%d\n", deadzone);
+	fprintf(f, "invert_stick=%d\n", invert_stick);
 	fprintf(f, "state_slot=%d\n", state_slot);
 	fprintf(f, "covers_download=%d\n", covers_download ? 1 : 0);
 	fprintf(f, "updates=%d\n", updates ? 1 : 0);
