@@ -174,12 +174,14 @@ struct Backdrop
 {
 	std::vector<uint32_t> px; // W*H
 	const CoverTex* from = nullptr;
+	bool floor = true; // the shelf's floor and horizon (the grid and the list have none)
 };
 
-void BuildBackdrop(Pool& pool, Backdrop& bd, const CoverTex* tex)
+void BuildBackdrop(Pool& pool, Backdrop& bd, const CoverTex* tex, bool floor)
 {
 	bd.px.resize(size_t(W) * H);
 	bd.from = tex;
+	bd.floor = floor;
 	// 1. a 64x36 thumbnail: the cover's smallest level, scaled to fill (cropped), or a plain colour
 	constexpr int TW = 64, TH = 36;
 	float small[TH][TW][3];
@@ -249,7 +251,7 @@ void BuildBackdrop(Pool& pool, Backdrop& bd, const CoverTex* tex)
 			const float wy = std::clamp(fy - y0, 0.0f, 1.0f);
 			const float vy = (y - H * 0.45f) / (H * 0.75f);
 			float floor_k = 1.0f;
-			if (y > floor_y)
+			if (floor && y > floor_y)
 				floor_k = 0.78f - 0.25f * std::min(1.0f, (y - floor_y) / (H - floor_y));
 			uint32_t* row = &bd.px[size_t(y) * W];
 			for (int x = x0; x < x1; x++)
@@ -272,7 +274,7 @@ void BuildBackdrop(Pool& pool, Backdrop& bd, const CoverTex* tex)
 	});
 	// a faint horizon line on the floor
 	const int fy = int(floor_y);
-	for (int x = 0; x < W; x++)
+	for (int x = 0; x < W && floor; x++)
 	{
 		const float k = 1.0f - std::abs(x - W * 0.5f) / (W * 0.5f);
 		uint32_t& p = bd.px[size_t(fy) * W + x];
@@ -423,18 +425,15 @@ void DrawCover(const Placed& p, uint32_t* surf, int x0, int x1)
 	}
 }
 
-// The glow behind the middle cover, in the cover's average colour.
-void DrawGlow(const Placed& p, uint32_t* surf, int x0, int x1, float strength)
+// A glow of radius R around the rectangle l..r, top..bot, in colour col (reaching below * R under it);
+// columns [x0, x1), rows [y0, y1).
+void DrawGlowRect(float l, float r, float top, float bot, uint32_t col, float strength, float R, float below,
+	uint32_t* surf, int x0, int x1, int y0, int y1)
 {
 	if (strength <= 0)
 		return;
-	const float top = kHorizon - kFocal * (p.wh - kCamY) / p.dist;
-	const float bot = kHorizon + kFocal * kCamY / p.dist;
-	const float l = float(p.sx0), r = float(p.sx1);
-	const float R = 70.0f;
-	const uint32_t col = p.tex->average;
 	const int gx0 = std::max(x0, int(l - R)), gx1 = std::min(x1, int(r + R));
-	const int gy0 = std::max(0, int(top - R)), gy1 = std::min(H, int(bot + R * 0.6f));
+	const int gy0 = std::max(y0, int(top - R)), gy1 = std::min(y1, int(bot + R * below));
 	for (int y = gy0; y < gy1; y++)
 	{
 		const float dy = std::max({top - y, 0.0f, y - bot});
@@ -455,6 +454,94 @@ void DrawGlow(const Placed& p, uint32_t* surf, int x0, int x1, float strength)
 			const uint32_t a = uint32_t(k * k * strength * 0.85f * 256);
 			row[x] = Add32(row[x], Scale32(col, a));
 		}
+	}
+}
+
+// The glow behind the shelf's middle cover, in the cover's average colour.
+void DrawGlow(const Placed& p, uint32_t* surf, int x0, int x1, float strength)
+{
+	const float top = kHorizon - kFocal * (p.wh - kCamY) / p.dist;
+	const float bot = kHorizon + kFocal * kCamY / p.dist;
+	DrawGlowRect(float(p.sx0), float(p.sx1), top, bot, p.tex->average, strength, 70.0f, 0.6f, surf, x0, x1, 0, H);
+}
+
+// ---- flat covers: the grid and the list ------------------------------------------------------------------
+struct FlatRect
+{
+	float x = 0, y = 0, w = 0, h = 0;
+};
+
+// The cover fitted into the box (bx, by, bw, bh), keeping its shape, centred.
+FlatRect FitCover(const CoverTex& t, float bx, float by, float bw, float bh)
+{
+	const float aspect = float(t.w[0]) / float(t.h[0]);
+	float w = bw, h = bw / aspect;
+	if (h > bh)
+	{
+		h = bh;
+		w = bh * aspect;
+	}
+	return {bx + (bw - w) * 0.5f, by + (bh - h) * 0.5f, w, h};
+}
+
+// Draws a cover into r, straight on (bilinear from the nearest mip level, anti-aliased edges): columns
+// [x0, x1), rows [y0, y1).
+void DrawFlat(const CoverTex& t, const FlatRect& r, uint32_t bright, uint32_t* surf, int x0, int x1, int y0, int y1)
+{
+	const float scale = r.h / float(t.h[0]);
+	const int l = scale < 0.38f ? 2 : scale < 0.75f ? 1 : 0;
+	const int tw = t.w[l], th = t.h[l];
+	const uint32_t* px = t.px[l].data();
+	const int cx0 = std::max(x0, int(std::floor(r.x))), cx1 = std::min(x1, int(std::ceil(r.x + r.w)));
+	const int ry0 = std::max(std::max(y0, 0), int(std::floor(r.y)));
+	const int ry1 = std::min(std::min(y1, H), int(std::ceil(r.y + r.h)));
+	if (cx0 >= cx1 || ry0 >= ry1 || th < 2)
+		return;
+	const float du = tw / r.w, dv = th / r.h;
+	const int32_t dv16 = int32_t(dv * 65536.0f);
+	const int32_t vmax = (th - 1) << 16;
+	for (int x = cx0; x < cx1; x++)
+	{
+		const float cov_x = std::min(x + 1.0f, r.x + r.w) - std::max(float(x), r.x);
+		if (cov_x <= 0)
+			continue;
+		const float u = (x + 0.5f - r.x) * du - 0.5f;
+		const int u0 = std::clamp(int(std::floor(u)), 0, tw - 1), u1 = std::min(u0 + 1, tw - 1);
+		const uint32_t fu = uint32_t(std::clamp(u - std::floor(u), 0.0f, 1.0f) * 256);
+		const uint32_t* c0 = px + size_t(u0) * th;
+		const uint32_t* c1 = px + size_t(u1) * th;
+		int32_t v = int32_t(((ry0 + 0.5f - r.y) * dv - 0.5f) * 65536.0f);
+		uint32_t* d = surf + size_t(ry0) * W + x;
+		for (int y = ry0; y < ry1; y++, v += dv16, d += W)
+		{
+			float cov = cov_x;
+			if (y < r.y || y + 1 > r.y + r.h)
+				cov *= std::min(y + 1.0f, r.y + r.h) - std::max(float(y), r.y);
+			if (cov <= 0)
+				continue;
+			const int32_t vc = std::clamp(v, 0, vmax - 1);
+			const int ty = vc >> 16;
+			const uint32_t fv = uint32_t(vc >> 8) & 0xff;
+			const uint32_t s = Lerp32(Lerp32(c0[ty], c0[ty + 1], fv), Lerp32(c1[ty], c1[ty + 1], fv), fu);
+			const uint32_t c = bright >= 256 ? s : Scale32(s, bright);
+			const uint32_t a = uint32_t(std::min(cov, 1.0f) * 256);
+			*d = a >= 256 ? c : Lerp32(*d, c, a);
+		}
+	}
+}
+
+// A frame of thickness t around r, in col: columns [x0, x1), rows [y0, y1).
+void DrawFrame(const FlatRect& r, int t, uint32_t col, uint32_t* surf, int x0, int x1, int y0, int y1)
+{
+	const int l = int(std::floor(r.x)) - t, rr = int(std::ceil(r.x + r.w)) + t;
+	const int top = int(std::floor(r.y)) - t, bot = int(std::ceil(r.y + r.h)) + t;
+	for (int y = std::max({top, y0, 0}); y < std::min({bot, y1, H}); y++)
+	{
+		const bool edge_row = y < top + t || y >= bot - t;
+		uint32_t* row = surf + size_t(y) * W;
+		for (int x = std::max(l, x0); x < std::min(rr, x1); x++)
+			if (edge_row || x < l + t || x >= rr - t)
+				row[x] = col;
 	}
 }
 
@@ -571,6 +658,47 @@ void Loading(const char* text)
 	CenterText(H / 2 - 20, text, 4, Rgb(220, 220, 235));
 	ps5video::Present(0, 0, 0, 0, true);
 }
+// ---- the views of the game list: the 3D shelf, a grid, a list (setting "Game list view"; the touchpad
+// cycles them) ---------------------------------------------------------------------------------------------
+enum View
+{
+	kViewShelf = 0,
+	kViewGrid = 1,
+	kViewList = 2,
+	kViewCount = 3
+};
+
+// grid: kGridCols x kGridRows cells, each with the box art fitted in, scrolling by rows
+constexpr int kGridCols = 6, kGridRows = 3;
+constexpr float kGridX = 150, kGridY = 215, kCellW = 270, kCellH = 205, kCellPad = 14;
+// covers are drawn between these rows only (the next row doesn't peek in); the selection's glow a bit further
+constexpr int kGridTop = 205, kGridBottom = 836;
+constexpr int kGlowTop = 190, kGlowBottom = 852;
+
+// list: kListRows titles with a small cover, the selected game's box art large on the right
+constexpr int kListRows = 13;
+constexpr int kListX = 100, kListY = 212, kListW = 1000, kListRowH = 56;
+constexpr float kListArtX = 1170, kListArtY = 222, kListArtW = 650, kListArtH = 470;
+
+const uint32_t kAccent = Rgb(150, 125, 255);
+const uint32_t kSel = Rgb(78, 62, 170);
+
+// "USA   Z64   USB", as under the selection
+std::string SubLine(const GameInfo& g, const CoverTex* tex)
+{
+	std::string sub;
+	if (!g.region.empty())
+		sub = g.region + "   ";
+	std::string ext = g.ext.size() > 1 ? g.ext.substr(1) : g.ext;
+	for (char& c : ext)
+		c = char(toupper(uint8_t(c)));
+	sub += ext;
+	if (g.on_usb)
+		sub += "   USB";
+	if (tex && !tex->real)
+		sub += "   no cover";
+	return sub;
+}
 } // namespace
 
 void ShelfShutdown()
@@ -612,18 +740,22 @@ std::string Shelf()
 	for (int i = 0; i < n; i++)
 		if (st.games[size_t(i)].path == cfg.last_rom)
 			sel = i;
-	float pos = float(sel);
-	st.covers.SetFocus(sel);
+	float pos = float(sel); // shelf: the cover in the middle (gliding)
+	int grid_top = 0; // grid: the first row shown
+	float grid_pos = 0; // ... gliding
+	int list_top = 0; // list: the first title shown
+	int focus = -1; // where the cover service loads around
+	int last_view = -1;
 
 	Backdrop bd_cur, bd_old;
 	float fade = 1.0f; // 0..1: old -> cur
 	N64_STAGE(Shelf, "build backdrop");
-	BuildBackdrop(pool, bd_cur, nullptr);
+	BuildBackdrop(pool, bd_cur, nullptr, std::clamp(cfg.game_view, 0, kViewCount - 1) == kViewShelf);
 	N64_STAGE(Shelf, "first frame");
 	const CoverTex* bd_wanted = nullptr;
 	double sel_since = Now();
 
-	Repeat rep_l, rep_r, rep_l1, rep_r1;
+	Repeat rep_l, rep_r, rep_u, rep_d, rep_l1, rep_r1;
 	ps5input::Poll();
 	uint32_t prev = ps5input::Pad(0).buttons;
 	double last = Now();
@@ -636,6 +768,7 @@ std::string Shelf()
 		const double now = Now();
 		const float dt = float(std::min(0.05, now - last));
 		last = now;
+		const int view = std::clamp(cfg.game_view, 0, kViewCount - 1);
 
 		// -- input
 		ps5input::Poll();
@@ -643,20 +776,56 @@ std::string Shelf()
 		const uint32_t down = cur & ~prev;
 		prev = cur;
 		const int old_sel = sel;
-		if (n > 0)
 		{
-			if (rep_l.Fire(cur & SCE_PAD_BUTTON_LEFT, now))
-				sel = std::max(0, sel - 1);
-			if (rep_r.Fire(cur & SCE_PAD_BUTTON_RIGHT, now))
-				sel = std::min(n - 1, sel + 1);
-			if (rep_l1.Fire(cur & SCE_PAD_BUTTON_L1, now))
-				sel = std::max(0, sel - 10);
-			if (rep_r1.Fire(cur & SCE_PAD_BUTTON_R1, now))
-				sel = std::min(n - 1, sel + 10);
+			const bool left = rep_l.Fire(cur & SCE_PAD_BUTTON_LEFT, now);
+			const bool right = rep_r.Fire(cur & SCE_PAD_BUTTON_RIGHT, now);
+			const bool up = rep_u.Fire(cur & SCE_PAD_BUTTON_UP, now);
+			const bool dn = rep_d.Fire(cur & SCE_PAD_BUTTON_DOWN, now);
+			const bool l1 = rep_l1.Fire(cur & SCE_PAD_BUTTON_L1, now);
+			const bool r1 = rep_r1.Fire(cur & SCE_PAD_BUTTON_R1, now);
+			if (n > 0 && view == kViewShelf)
+			{
+				if (left)
+					sel = std::max(0, sel - 1);
+				if (right)
+					sel = std::min(n - 1, sel + 1);
+				if (l1)
+					sel = std::max(0, sel - 10);
+				if (r1)
+					sel = std::min(n - 1, sel + 10);
+			}
+			else if (n > 0 && view == kViewGrid)
+			{
+				const int page = kGridCols * kGridRows;
+				const int last_row = (n - 1) / kGridCols;
+				if (left)
+					sel = std::max(0, sel - 1);
+				if (right)
+					sel = std::min(n - 1, sel + 1);
+				if (up && sel >= kGridCols)
+					sel -= kGridCols;
+				if (dn && sel / kGridCols < last_row)
+					sel = std::min(n - 1, sel + kGridCols);
+				// a page up or down, in the same column where it can
+				if (l1)
+					sel = sel >= page ? sel - page : sel % kGridCols;
+				if (r1)
+					sel = sel + page <= n - 1 ? sel + page : std::max(sel, std::min(n - 1, last_row * kGridCols + sel % kGridCols));
+			}
+			else if (n > 0)
+			{
+				if (up)
+					sel = std::max(0, sel - 1);
+				if (dn)
+					sel = std::min(n - 1, sel + 1);
+				if (l1)
+					sel = std::max(0, sel - (kListRows - 1));
+				if (r1)
+					sel = std::min(n - 1, sel + (kListRows - 1));
+			}
 		}
 		if (sel != old_sel)
 		{
-			st.covers.SetFocus(sel);
 			sel_since = now;
 			dirty = true;
 		}
@@ -665,6 +834,12 @@ std::string Shelf()
 			cfg.last_rom = st.games[size_t(sel)].path;
 			cfg.Save();
 			return st.games[size_t(sel)].path;
+		}
+		if (down & SCE_PAD_BUTTON_TOUCH_PAD)
+		{
+			cfg.game_view = (view + 1) % kViewCount;
+			cfg.Save();
+			dirty = true;
 		}
 		if (down & SCE_PAD_BUTTON_TRIANGLE)
 		{
@@ -700,7 +875,52 @@ std::string Shelf()
 			dirty = true;
 		}
 
-		// -- covers that arrived
+		// -- scrolling: the grid's rows and the list's titles keep the selection in view
+		if (n > 0)
+		{
+			const int row = sel / kGridCols;
+			const int rows = (n + kGridCols - 1) / kGridCols;
+			if (row < grid_top)
+				grid_top = row;
+			if (row > grid_top + kGridRows - 1)
+				grid_top = row - kGridRows + 1;
+			grid_top = std::clamp(grid_top, 0, std::max(0, rows - kGridRows));
+			if (sel < list_top + 2)
+				list_top = sel - 2;
+			if (sel > list_top + kListRows - 3)
+				list_top = sel - kListRows + 3;
+			list_top = std::clamp(list_top, 0, std::max(0, n - kListRows));
+		}
+		const int new_view = std::clamp(cfg.game_view, 0, kViewCount - 1);
+		if (new_view != last_view)
+		{
+			// a new view: no glide into it, and the shelf's floor only behind the shelf
+			last_view = new_view;
+			pos = float(sel);
+			grid_pos = float(grid_top);
+			if (bd_cur.floor != (new_view == kViewShelf))
+			{
+				BuildBackdrop(pool, bd_cur, bd_cur.from, new_view == kViewShelf);
+				bd_old.px.clear();
+				fade = 1.0f;
+			}
+			dirty = true;
+		}
+
+		// -- covers: loaded around the selection (shelf) or the middle of what's on screen (grid, list)
+		if (n > 0)
+		{
+			int want = sel;
+			if (new_view == kViewGrid)
+				want = std::min(n - 1, grid_top * kGridCols + kGridCols * kGridRows / 2);
+			else if (new_view == kViewList)
+				want = std::min(n - 1, list_top + kListRows / 2);
+			if (want != focus)
+			{
+				focus = want;
+				st.covers.SetFocus(focus);
+			}
+		}
 		const size_t before = std::count_if(st.slots.begin(), st.slots.end(), [](const CoverPtr& c) { return c != nullptr; });
 		st.covers.Collect(st.slots, kKeepRadius);
 		const size_t after = std::count_if(st.slots.begin(), st.slots.end(), [](const CoverPtr& c) { return c != nullptr; });
@@ -716,6 +936,13 @@ std::string Shelf()
 				pos = target;
 			dirty = true;
 		}
+		if (std::abs(float(grid_top) - grid_pos) > 0.0005f)
+		{
+			grid_pos += (float(grid_top) - grid_pos) * (1.0f - std::exp(-dt * 14.0f));
+			if (std::abs(float(grid_top) - grid_pos) < 0.0005f)
+				grid_pos = float(grid_top);
+			dirty = true;
+		}
 
 		// -- backdrop follows the selection once it rests for a moment
 		const CoverTex* sel_tex = (n > 0 && st.slots[size_t(sel)]) ? st.slots[size_t(sel)].get() : nullptr;
@@ -723,7 +950,7 @@ std::string Shelf()
 		{
 			bd_wanted = sel_tex;
 			std::swap(bd_old, bd_cur);
-			BuildBackdrop(pool, bd_cur, sel_tex);
+			BuildBackdrop(pool, bd_cur, sel_tex, new_view == kViewShelf);
 			fade = bd_old.px.empty() ? 1.0f : 0.0f;
 			dirty = true;
 		}
@@ -748,21 +975,71 @@ std::string Shelf()
 		}
 		dirty = false;
 
-		// -- place the covers, far ones first
-		std::vector<Placed> placed;
-		if (n > 0)
+		auto tex_of = [&](int i) -> const CoverTex* {
+			return st.slots[size_t(i)] ? st.slots[size_t(i)].get() : LoadingCard().get();
+		};
+
+		// -- lay out what this view shows
+		std::vector<Placed> placed; // shelf: far ones first
+		struct Flat
+		{
+			const CoverTex* tex;
+			FlatRect r;
+			bool selected;
+		};
+		std::vector<Flat> flats; // grid and list
+		if (n > 0 && new_view == kViewShelf)
 		{
 			const int lo = std::max(0, int(std::floor(pos - kVisible)));
 			const int hi = std::min(n - 1, int(std::ceil(pos + kVisible)));
 			for (int i = lo; i <= hi; i++)
 			{
-				const CoverTex* tex = st.slots[size_t(i)] ? st.slots[size_t(i)].get() : LoadingCard().get();
 				Placed p;
-				if (Place(p, tex, float(i) - pos))
+				if (Place(p, tex_of(i), float(i) - pos))
 					placed.push_back(p);
 			}
 			std::sort(placed.begin(), placed.end(), [](const Placed& a, const Placed& b) { return std::abs(a.d) > std::abs(b.d); });
 		}
+		else if (n > 0 && new_view == kViewGrid)
+		{
+			const int r0 = std::max(0, int(std::floor(grid_pos)) - 1);
+			const int r1 = int(std::ceil(grid_pos)) + kGridRows;
+			for (int row = r0; row <= r1; row++)
+				for (int c = 0; c < kGridCols; c++)
+				{
+					const int i = row * kGridCols + c;
+					if (i >= n)
+						break;
+					const float cy = kGridY + (float(row) - grid_pos) * kCellH;
+					if (cy + kCellH < kGridTop || cy > kGridBottom)
+						continue;
+					float bx = kGridX + c * kCellW + kCellPad, by = cy + kCellPad;
+					float bw = kCellW - 2 * kCellPad, bh = kCellH - 2 * kCellPad;
+					if (i == sel) // the selection stands out a little
+					{
+						bx -= bw * 0.04f;
+						by -= bh * 0.04f;
+						bw *= 1.08f;
+						bh *= 1.08f;
+					}
+					const CoverTex* tex = tex_of(i);
+					flats.push_back({tex, FitCover(*tex, bx, by, bw, bh), i == sel});
+				}
+			// the selection last, over its neighbours
+			std::stable_partition(flats.begin(), flats.end(), [](const Flat& f) { return !f.selected; });
+		}
+		else if (n > 0 && new_view == kViewList)
+		{
+			for (int k = 0; k < kListRows && list_top + k < n; k++)
+			{
+				const CoverTex* tex = tex_of(list_top + k);
+				const float ry = float(kListY + k * kListRowH);
+				flats.push_back({tex, FitCover(*tex, kListX + 14.0f, ry + 6, 80, kListRowH - 12.0f), false});
+			}
+			const CoverTex* tex = tex_of(sel);
+			flats.push_back({tex, FitCover(*tex, kListArtX, kListArtY, kListArtW, kListArtH), true});
+		}
+
 		uint32_t* surf = ps5video::Surface();
 		const uint32_t fade_w = uint32_t(fade * 256);
 		const double t_render = Now();
@@ -781,12 +1058,47 @@ std::string Shelf()
 						out[x] = Lerp32(o[x], a[x], fade_w);
 				}
 			}
-			// covers; the glow goes right before the middle one
-			for (const Placed& p : placed)
+			if (new_view == kViewShelf)
 			{
-				if (std::abs(p.d) < 0.5f)
-					DrawGlow(p, surf, x0, x1, 1.0f - std::abs(p.d) * 2.0f);
-				DrawCover(p, surf, x0, x1);
+				// covers; the glow goes right before the middle one
+				for (const Placed& p : placed)
+				{
+					if (std::abs(p.d) < 0.5f)
+						DrawGlow(p, surf, x0, x1, 1.0f - std::abs(p.d) * 2.0f);
+					DrawCover(p, surf, x0, x1);
+				}
+			}
+			else if (new_view == kViewGrid)
+			{
+				for (const Flat& f : flats)
+				{
+					if (f.selected)
+						DrawGlowRect(f.r.x, f.r.x + f.r.w, f.r.y, f.r.y + f.r.h, f.tex->average, 1.0f, 46.0f, 1.0f, surf, x0, x1,
+							kGlowTop, kGlowBottom);
+					DrawFlat(*f.tex, f.r, f.selected ? 256 : 200, surf, x0, x1, kGridTop, kGridBottom);
+					if (f.selected)
+						DrawFrame(f.r, 4, kAccent, surf, x0, x1, kGridTop, kGridBottom);
+				}
+			}
+			else
+			{
+				// a darker panel behind the titles, and the selected row in the menus' colour
+				const int py0 = kListY - 8, py1 = kListY + kListRows * kListRowH + 8;
+				const int px0 = std::max(x0, kListX), px1 = std::min(x1, kListX + kListW);
+				const int srow = sel - list_top;
+				for (int y = py0; y < py1 && px0 < px1; y++)
+				{
+					uint32_t* row = surf + size_t(y) * W;
+					const bool in_sel = n > 0 && y >= kListY + srow * kListRowH && y < kListY + (srow + 1) * kListRowH;
+					for (int x = px0; x < px1; x++)
+						row[x] = in_sel ? Lerp32(row[x], kSel, 215) : Scale32(row[x], 120);
+				}
+				for (const Flat& f : flats)
+				{
+					if (f.selected)
+						DrawGlowRect(f.r.x, f.r.x + f.r.w, f.r.y, f.r.y + f.r.h, f.tex->average, 0.9f, 60.0f, 1.0f, surf, x0, x1, 0, H);
+					DrawFlat(*f.tex, f.r, 256, surf, x0, x1, 0, H);
+				}
 			}
 		});
 
@@ -796,7 +1108,8 @@ std::string Shelf()
 			sum += Now() - t_render;
 			if (++frames == 60)
 			{
-				OrbisLog("[shelf] 3D pass: %.2f ms a frame (average of 60)", sum / frames * 1000.0);
+				OrbisLog("[shelf] %s pass: %.2f ms a frame (average of 60)", new_view == kViewShelf ? "3D" : "flat",
+					sum / frames * 1000.0);
 				sum = 0;
 				frames = 0;
 			}
@@ -813,19 +1126,41 @@ std::string Shelf()
 			snprintf(count, sizeof(count), "%d / %d", sel + 1, n);
 			DrawText(W - 80 - TextWidth(count, 4), 50, count, 4, Rgb(220, 220, 235));
 			const GameInfo& g = st.games[size_t(sel)];
-			CenterText(800, g.title, 6, Rgb(245, 245, 252));
-			std::string sub;
-			if (!g.region.empty())
-				sub = g.region + "   ";
-			std::string ext = g.ext.size() > 1 ? g.ext.substr(1) : g.ext;
-			for (char& c : ext)
-				c = char(toupper(uint8_t(c)));
-			sub += ext;
-			if (g.on_usb)
-				sub += "   USB";
-			if (sel_tex && !sel_tex->real)
-				sub += "   no cover";
-			CenterText(880, sub, 3, Rgb(175, 170, 205));
+			if (new_view == kViewShelf)
+			{
+				CenterText(800, g.title, 6, Rgb(245, 245, 252));
+				CenterText(880, SubLine(g, sel_tex), 3, Rgb(175, 170, 205));
+			}
+			else if (new_view == kViewGrid)
+			{
+				CenterText(872, g.title, 5, Rgb(245, 245, 252));
+				CenterText(940, SubLine(g, sel_tex), 3, Rgb(175, 170, 205));
+			}
+			else
+			{
+				for (int k = 0; k < kListRows && list_top + k < n; k++)
+				{
+					const int i = list_top + k;
+					const std::string t = FitText(st.games[size_t(i)].title, 3, kListW - 150);
+					DrawText(kListX + 112, kListY + k * kListRowH + 13, t.c_str(), 3,
+						i == sel ? Rgb(250, 250, 255) : Rgb(200, 196, 224));
+				}
+				// a scroll bar when the list is longer than the panel
+				if (n > kListRows)
+				{
+					const int track = kListRows * kListRowH;
+					const int thumb = std::max(30, track * kListRows / n);
+					const int ty = kListY + (track - thumb) * list_top / (n - kListRows);
+					ps5video::FillRect(kListX + kListW - 14, kListY, 6, track, Rgb(40, 36, 70));
+					ps5video::FillRect(kListX + kListW - 14, ty, 6, thumb, kAccent);
+				}
+				const int tx = int(kListArtX);
+				const std::string title = FitText(g.title, 4, int(kListArtW));
+				DrawText(tx, int(kListArtY + kListArtH) + 28, title.c_str(), 4, Rgb(245, 245, 252));
+				DrawText(tx, int(kListArtY + kListArtH) + 82, SubLine(g, sel_tex).c_str(), 3, Rgb(175, 170, 205));
+				const std::string file = FitText(g.file_base + g.ext, 2, int(kListArtW));
+				DrawText(tx, int(kListArtY + kListArtH) + 126, file.c_str(), 2, Rgb(140, 136, 170));
+			}
 		}
 		else
 		{
@@ -849,9 +1184,11 @@ std::string Shelf()
 		// hints
 		ps5video::DarkenRect(0, H - 78, W, 78);
 		const std::string sp = "      ";
+		const std::string browse = new_view == kViewShelf ? icon::DpadLeftRight : new_view == kViewGrid ? icon::Dpad : icon::DpadUpDown;
+		const std::string skip = new_view == kViewShelf ? " Skip 10" : " Page";
 		const std::string hint = n > 0
-			? std::string(icon::Cross) + " Play" + sp + icon::DpadLeftRight + " Browse" + sp + icon::L1 + " " + icon::R1 +
-				" Skip 10" + sp + icon::Triangle + " Settings" + sp + icon::Square + " Get cover" + sp +
+			? std::string(icon::Cross) + " Play" + sp + browse + " Browse" + sp + icon::L1 + " " + icon::R1 + skip + sp +
+				icon::Triangle + " Settings" + sp + icon::Square + " Get cover" + sp + icon::Touchpad + " View" + sp +
 				icon::Options + " Quit"
 			: std::string(icon::Triangle) + " Settings" + sp + icon::Options + " Quit";
 		DrawText((W - TextWidth(hint.c_str(), 3)) / 2, H - 60, hint.c_str(), 3, Rgb(205, 200, 228));

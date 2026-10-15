@@ -170,14 +170,17 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | Stick dead zone | 0–30% |
 | Invert left stick | turns the analog stick's X (left/right), Y (up/down) or both round; Off by default |
 | Invert right stick | the same for the right stick's C buttons (Triangle / Circle stay C-up / C-down); Off by default |
+| Game list view | Shelf (3D, default), Grid or List; the touchpad on the game list switches too |
 | Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (the renderer: angrylion's rasteriser incl. waiting for its threads, or handing commands to the GPU), `vi` (the VI filter, or reading the GPU's picture back), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
 | Sound, Download covers | |
 | Check for updates | ask at start-up when a newer GitHub release exists (see [Updates](#updates)) |
 
-**On the shelf:**
+**On the game list** (three views: the 3D shelf, a grid of covers, a list of titles with the cover beside it):
 
-- Left/Right: choose a game
+- D-pad: choose a game (shelf: Left/Right; grid: all four directions; list: Up/Down)
+- L1/R1: 10 games back or on (shelf), a page up or down (grid, list)
 - Cross: play
+- Touchpad: the next view (remembered; also Settings → Game list view)
 - Triangle: settings
 - Square: fetch the cover again
 - OPTIONS: quit

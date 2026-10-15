@@ -82,6 +82,8 @@ void Settings::Load()
 			invert_stick = Clamp(atoi(val), 0, 3);
 		else if (key == "invert_c_stick")
 			invert_c_stick = Clamp(atoi(val), 0, 3);
+		else if (key == "game_view")
+			game_view = Clamp(atoi(val), 0, 2);
 		else if (key == "state_slot")
 			state_slot = Clamp(atoi(val), 0, 9);
 		else if (key == "covers_download")
@@ -124,6 +126,7 @@ void Settings::Save() const
 	fprintf(f, "deadzone=%d\n", deadzone);
 	fprintf(f, "invert_stick=%d\n", invert_stick);
 	fprintf(f, "invert_c_stick=%d\n", invert_c_stick);
+	fprintf(f, "game_view=%d\n", game_view);
 	fprintf(f, "state_slot=%d\n", state_slot);
 	fprintf(f, "covers_download=%d\n", covers_download ? 1 : 0);
 	fprintf(f, "updates=%d\n", updates ? 1 : 0);

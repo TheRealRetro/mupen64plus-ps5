@@ -1,4 +1,5 @@
-// Mupen64Plus PS5 frontend: the game shelf -- a 3D cover flow of the library, like PS5SX2's.
+// Mupen64Plus PS5 frontend: the game shelf -- a 3D cover flow of the library, like PS5SX2's. Setting "Game
+// list view" (the touchpad cycles it) shows the library as a grid of covers or a list of titles instead.
 //
 // The selected game's box art stands in the middle, lit by a glow in its own colour, over a blurred
 // copy of the same art; the rest of the library stands at an angle on both sides, in perspective, and every

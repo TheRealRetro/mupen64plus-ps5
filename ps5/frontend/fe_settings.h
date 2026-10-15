@@ -30,6 +30,7 @@ struct Settings
 	int invert_c_stick = 0; // the right stick (C buttons), the same way
 	// misc
 	int state_slot = 0; // 0..9
+	int game_view = 0; // the game list: 0 shelf (3D cover flow), 1 grid, 2 list (the touchpad cycles them)
 	bool covers_download = true; // fetch box art from libretro-thumbnails
 	bool updates = true; // offer new GitHub releases at start-up (fe_update.h)
 	std::string last_dir; // the browser reopens here

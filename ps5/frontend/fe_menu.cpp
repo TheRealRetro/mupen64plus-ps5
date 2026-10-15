@@ -271,6 +271,7 @@ enum SettingRow
 	S_DEADZONE,
 	S_INVERT,
 	S_INVERT_C,
+	S_VIEW,
 	S_COVERS,
 	S_UPDATES,
 	S_COUNT
@@ -299,6 +300,7 @@ std::string SettingLabel(int s)
 		case S_DEADZONE: return "Stick dead zone";
 		case S_INVERT: return "Invert left stick";
 		case S_INVERT_C: return "Invert right stick";
+		case S_VIEW: return "Game list view";
 		case S_COVERS: return "Download covers";
 		case S_UPDATES: return "Check for updates";
 		default: return "";
@@ -346,6 +348,11 @@ std::string SettingValue(int s)
 		{
 			static const char* const kInvert[] = {"Off", "X (left/right)", "Y (up/down)", "X and Y"};
 			return kInvert[(s == S_INVERT ? c.invert_stick : c.invert_c_stick) & 3];
+		}
+		case S_VIEW:
+		{
+			static const char* const kViews[] = {"Shelf (3D)", "Grid", "List"};
+			return kViews[std::clamp(c.game_view, 0, 2)];
 		}
 		case S_COVERS: return YesNo(c.covers_download);
 		case S_UPDATES: return YesNo(c.updates);
@@ -405,6 +412,7 @@ void ChangeSetting(int s, int dir)
 		}
 		case S_INVERT: c.invert_stick = (c.invert_stick + dir + 4) & 3; break;
 		case S_INVERT_C: c.invert_c_stick = (c.invert_c_stick + dir + 4) & 3; break;
+		case S_VIEW: c.game_view = (std::clamp(c.game_view, 0, 2) + dir + 3) % 3; break;
 		case S_COVERS: c.covers_download = !c.covers_download; break;
 		case S_UPDATES: c.updates = !c.updates; break;
 	}

@@ -45,6 +45,8 @@ constexpr const char* L3 = "\xE2\x86\xBA";
 constexpr const char* R3 = "\xE2\x86\xBB";
 constexpr const char* DpadLeftRight = "\xE2\x86\xA2";
 constexpr const char* DpadUpDown = "\xE2\x86\xA3";
+constexpr const char* Dpad = "\xE2\x87\x8E"; // all four directions
+constexpr const char* Touchpad = "\xE2\x87\xA7";
 constexpr const char* Options = "\xE2\x88\x88";
 constexpr const char* GitHub = "\xEF\x82\x9B"; // U+F09B, Font Awesome Brands
 } // namespace icon
