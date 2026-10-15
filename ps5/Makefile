@@ -143,9 +143,11 @@ endif
 GEN := build/gen
 GAMEDB := $(GEN)/n64-gamedb.tsv
 M64_INI := $(M64)/data/mupen64plus.ini
-$(GAMEDB): tools/make_n64db.py $(M64_INI)
+# libretro-thumbnails' box art names, so the table's names match its files (make_n64db.py --fetch-boxarts)
+BOXARTS := tools/libretro-n64-boxarts.txt
+$(GAMEDB): tools/make_n64db.py $(M64_INI) $(BOXARTS)
 	@mkdir -p $(dir $@)
-	python3 tools/make_n64db.py $(M64_INI) $@
+	python3 tools/make_n64db.py $(M64_INI) $@ $(BOXARTS)
 
 %/port/frontend/fe_games.o: EXTRA_FLAGS = -DGAMEDB_TSV='"$(abspath $(GAMEDB))"'
 # the ROM catalog itself goes into fe_emu.o (written to /data/mupen64plus/data for the core)
