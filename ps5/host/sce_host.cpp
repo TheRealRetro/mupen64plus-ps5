@@ -209,6 +209,34 @@ int sceSystemServiceLoadExec(const char* path, const char**)
 	fprintf(stderr, "[host] sceSystemServiceLoadExec(%s)\n", path ? path : "(null)");
 	return -1;
 }
+// Launching a title: logged; N64PS5_HOST_LAUNCH_FAILS=1 makes every call fail (no title ever comes up).
+static bool g_launched = false;
+static int HostLaunch(const char* what, const char* title_id, SceLncAppParam* param)
+{
+	const char* fails = getenv("N64PS5_HOST_LAUNCH_FAILS");
+	const int rc = fails && atoi(fails) ? int(0x80940002u) : 0;
+	fprintf(stderr, "[host] %s(%s, user %d) -> 0x%08x\n", what, title_id ? title_id : "(null)",
+		param ? int(param->user_id) : -1, unsigned(rc));
+	g_launched = g_launched || rc == 0;
+	return rc;
+}
+int sceLncUtilLaunchApp(const char* title_id, const char*[], SceLncAppParam* param)
+{
+	return HostLaunch("sceLncUtilLaunchApp", title_id, param);
+}
+int sceSystemServiceLaunchApp(const char* title_id, const char*[], SceLncAppParam* param)
+{
+	return HostLaunch("sceSystemServiceLaunchApp", title_id, param);
+}
+uint32_t sceLncUtilGetAppIdOfRunningBigApp(void)
+{
+	return g_launched ? 0x60000100u : 0xffffffffu;
+}
+int sceLncUtilGetAppTitleId(uint32_t, char* title_id)
+{
+	strcpy(title_id, "PPSA99064");
+	return 0;
+}
 
 // N64PS5_HOST_VIDEO_BUSY=N: the first N opens find the screen held by another process (0x80290009)
 int sceVideoOutOpen(int, int, int, const void*)

@@ -211,11 +211,14 @@ At every start, before it asks for `/data` (the console's HTTPS works only then,
 
 - **Names:** a ROM's name comes from its file name when that is already a No-Intro name ("F-Zero X
   (USA).z64"). Otherwise it comes from the CRC in its cartridge header, looked up in a table built from the
-  core's `mupen64plus.ini` (1891 games, `tools/make_n64db.py`).
-- **Covers:** they come from libretro-thumbnails (Nintendo 64, `Named_Boxarts`). The source works exactly as
-  in Snes9x PS5 (a prefetch at start-up, then a restart for new covers).
-- **When a cover doesn't download:** the catalog's names are GoodN64 names converted to No-Intro style, and
-  some differ from libretro's in capitalisation, which the download URL is sensitive to. Name the ROM file the
+  core's `mupen64plus.ini` (1891 games, `tools/make_n64db.py`). Its GoodN64 names are matched against
+  libretro-thumbnails' file list (`tools/libretro-n64-boxarts.txt`) and take their spelling there, language
+  tags included ("Diddy Kong Racing (USA) (En,Fr) (Rev 1)").
+- **Covers:** they come from libretro-thumbnails (Nintendo 64, `Named_Boxarts`), downloaded at start-up, before
+  the app asks for `/data` (HTTPS works only then). When the game list has new games without covers, the app
+  closes and its helper starts it again (`sceLncUtilLaunchApp`), so the next start fetches them; if it can't, the
+  covers come the next time you open the app.
+- **When a cover doesn't download:** the game isn't on libretro-thumbnails under that name. Name the ROM file the
   No-Intro way, or put your own `.png` in `covers/`.
 
 ## Known limitations

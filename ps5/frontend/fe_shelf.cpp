@@ -1181,6 +1181,11 @@ std::string Shelf()
 			const char* s = "Offline: covers next time";
 			DrawText(W - 80 - TextWidth(s, 3), 112, s, 3, Rgb(170, 160, 210));
 		}
+		else if (CoversForNextStart() > 0 && cfg.covers_download)
+		{
+			const char* s = "New games: covers next time you open the app";
+			DrawText(W - 80 - TextWidth(s, 3), 112, s, 3, Rgb(170, 160, 210));
+		}
 		// hints
 		ps5video::DarkenRect(0, H - 78, W, 78);
 		const std::string sp = "      ";

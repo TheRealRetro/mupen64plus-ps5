@@ -6,6 +6,7 @@
 
 #include "OrbisPaths.h"
 #include "ProsperoNotify.h"
+#include "ProsperoSce.h"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -180,6 +181,159 @@ Target TargetFor(const std::string& app_dir)
 std::string JobPath()
 {
 	return OrbisDir("update") + "/job.txt";
+}
+
+std::string RelaunchPath()
+{
+	return OrbisDir("update") + "/relaunch.txt";
+}
+
+bool WriteRelaunch(int pid, std::string& why)
+{
+	OrbisMkdirs(OrbisDir("update"));
+	const std::string path = RelaunchPath(), tmp = path + ".part";
+	FILE* f = fopen(tmp.c_str(), "w");
+	if (!f)
+	{
+		why = "can't write " + tmp;
+		return false;
+	}
+	fprintf(f, "pid=%d\ntime=%lld\n", pid, (long long)time(nullptr));
+	const bool ok = fclose(f) == 0;
+	if (!ok || rename(tmp.c_str(), path.c_str()) != 0)
+	{
+		unlink(tmp.c_str());
+		why = "can't write " + path;
+		return false;
+	}
+	return true;
+}
+
+namespace
+{
+constexpr uint32_t kNoApp = 0xffffffffu;
+constexpr uint32_t kAlreadyRunning = 0x8094000cu;
+
+// The title in the foreground ("" when none), as the system reports it.
+std::string RunningTitle()
+{
+	const uint32_t id = sceLncUtilGetAppIdOfRunningBigApp();
+	if (id == kNoApp)
+		return "";
+	char tid[32] = {};
+	if (sceLncUtilGetAppTitleId(id, tid) != 0)
+		return "?";
+	return tid;
+}
+
+// Starts the title. Which call and which user a payload's launch is accepted with isn't worth guessing
+// (PS5_Vulkan's ps5vkctl, confirmed on the console: etaHEN launches through sceLncUtilLaunchApp as the foreground
+// user, AirPSX through sceSystemServiceLaunchApp as a logged-in one), so the ways are tried in turn, and
+// after each the system is asked which title is up rather than trusting the return code.
+bool LaunchTitle(std::string& how)
+{
+	sceUserServiceInitialize(nullptr); // the user getters answer only once it is initialized
+	int32_t fg = -1;
+	if (sceUserServiceGetForegroundUser(&fg) != 0)
+		fg = -1;
+	int32_t users[4] = {-1, -1, -1, -1};
+	int32_t login = -1;
+	if (sceUserServiceGetLoginUserIdList(users) == 0)
+		for (int32_t u : users)
+			if (u >= 0)
+			{
+				login = u;
+				break;
+			}
+	struct Attempt
+	{
+		const char* name;
+		int (*call)(const char*, const char*[], SceLncAppParam*);
+		int32_t user;
+		uint64_t check_flag;
+	};
+	const Attempt attempts[] = {
+		{"sceLncUtilLaunchApp, foreground user", sceLncUtilLaunchApp, fg, 0},
+		{"sceLncUtilLaunchApp, login user", sceLncUtilLaunchApp, login, 0},
+		{"sceSystemServiceLaunchApp, login user", sceSystemServiceLaunchApp, login, 0},
+		{"sceLncUtilLaunchApp, login user, skip check", sceLncUtilLaunchApp, login, 1},
+	};
+	for (const Attempt& a : attempts)
+	{
+		if (a.user < 0)
+			continue;
+		SceLncAppParam param;
+		memset(&param, 0, sizeof(param));
+		param.size = uint32_t(sizeof(param));
+		param.user_id = a.user;
+		param.check_flag = a.check_flag;
+		const uint32_t rc = uint32_t(a.call(N64PS5_TITLE_ID, nullptr, &param));
+		// a call that reports an error may still have started it: look for 2 s before the next way
+		bool up = false;
+		for (int i = 0; i < 8 && !up && rc != 0 && rc != kAlreadyRunning; i++)
+		{
+			up = RunningTitle() == N64PS5_TITLE_ID;
+			if (!up)
+				usleep(250 * 1000);
+		}
+		OrbisLog("[relaunch] %s (user %d) -> 0x%08x%s", a.name, int(a.user), rc, up ? ", the app is up" : "");
+		if (rc == 0 || rc == kAlreadyRunning || up)
+		{
+			how = a.name;
+			return true;
+		}
+	}
+	OrbisLog("[relaunch] no launch call worked (foreground user %d, login user %d)", int(fg), int(login));
+	return false;
+}
+} // namespace
+
+void RelaunchIfPending()
+{
+	FILE* f = fopen(RelaunchPath().c_str(), "r");
+	if (!f)
+		return;
+	int pid = 0;
+	long long when = 0;
+	char line[128];
+	while (fgets(line, sizeof(line), f))
+	{
+		if (strncmp(line, "pid=", 4) == 0)
+			pid = atoi(line + 4);
+		else if (strncmp(line, "time=", 5) == 0)
+			when = atoll(line + 5);
+	}
+	fclose(f);
+	// take the job first: a second helper started meanwhile must not run it too
+	const std::string taken = RelaunchPath() + ".running";
+	if (rename(RelaunchPath().c_str(), taken.c_str()) != 0)
+		return;
+	const long long age = (long long)time(nullptr) - when;
+	if (pid <= 0 || when <= 0 || age < 0 || age > 120)
+	{
+		OrbisLog("[relaunch] dropping an old job (pid %d, %lld s old)", pid, age);
+		unlink(taken.c_str());
+		return;
+	}
+	OrbisLog("[relaunch] starting " N64PS5_TITLE_ID " again once pid %d has closed", pid);
+	for (int i = 0; i < 300 && ProcessAlive(pid); i++) // 30 s
+		usleep(100 * 1000);
+	if (ProcessAlive(pid))
+	{
+		OrbisLog("[relaunch] pid %d still running after 30 s: not starting it again", pid);
+		unlink(taken.c_str());
+		return;
+	}
+	// the system still lists the title for a moment after its process ends
+	for (int i = 0; i < 40 && RunningTitle() == N64PS5_TITLE_ID; i++)
+		usleep(250 * 1000);
+	usleep(500 * 1000);
+	std::string how;
+	if (LaunchTitle(how))
+		OrbisLog("[relaunch] " N64PS5_TITLE_ID " started again (%s)", how.c_str());
+	else
+		ProsperoNotify("Mupen64Plus PS5: open the app again to download the covers of your new games.");
+	unlink(taken.c_str());
 }
 
 bool Write(const Job& job, std::string& why)

@@ -53,8 +53,12 @@ void RememberPrefetch(const PrefetchResult& result);
 
 // The shelf, after a scan (console only): writes covers/wanted.txt for `games`. When it holds covers this
 // start didn't try (or `force`: Square on a game), the network is up and a helper answered, shows `text` with
-// `show` and starts the app again (sceSystemServiceLoadExec, as PS5SX2 re-executes its eboot), so the
-// prefetch fetches them. Returns only when it didn't restart.
+// `show` and closes; the helper starts the app again once it has exited (ProsperoUpdateJob.h,
+// RelaunchIfPending), so the prefetch fetches them. Returns only when it didn't close: then the covers wait
+// for the next start (CoversForNextStart), and the app never closes without coming back.
 void CoversRestartIfNeeded(const std::vector<GameInfo>& games, bool downloads_on, bool force,
 	void (*show)(const char* text));
+
+// New games whose covers come at the next start (the last CoversRestartIfNeeded didn't close), for the shelf.
+int CoversForNextStart();
 } // namespace fe

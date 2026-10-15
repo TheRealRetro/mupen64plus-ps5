@@ -86,8 +86,9 @@ int main()
 	g_ready_message = msg;
 #endif
 
-	// an update the app staged before closing (ProsperoUpdateJob.h)
+	// an update the app staged before closing, or the app to start again (ProsperoUpdateJob.h)
 	updatejob::RunIfPending();
+	updatejob::RelaunchIfPending();
 
 	// the helper: runs until the console is turned off, or returns at once when one already runs
 	if (!jailbreak::ServeHelper(OnReady))

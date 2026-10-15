@@ -178,8 +178,9 @@ PS5_OUT := build/ps5-cpu
 endif
 # The PS5's CPU is Zen 2 (PS5SX2 builds with the same -march).
 PS5_OPT := -O3 -fPIC -march=znver2 -fno-strict-aliasing
-# the payloads: notifications, and the kernel access the helper needs (libkernel_sys: sceKernelGetAppInfo)
-PS5_PAYLOAD_LIBS := -lkernel_sys
+# the payloads: notifications, the kernel access the helper needs (libkernel_sys: sceKernelGetAppInfo), and
+# starting the app again (libSceSystemService, libSceUserService: ProsperoUpdateJob.h, RelaunchIfPending)
+PS5_PAYLOAD_LIBS := -lkernel_sys -lSceSystemService -lSceUserService
 
 PS5_CORE_OBJ := $(patsubst %.c,$(PS5_OUT)/m64/%.o,$(CORE_SRC)) $(patsubst %.c,$(PS5_OUT)/m64sub/%.o,$(CORE_SUB_SRC)) \
 	$(PS5_OUT)/n64/n64/core/linkage_x64.o \

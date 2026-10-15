@@ -42,6 +42,21 @@ int sceSystemServiceHideSplashScreen(void);
 // "exit" ends the app the way the system wants (PS5SX2's OrbisExitApp: exit()/_exit() end in SIGSYS)
 int sceSystemServiceLoadExec(const char* path, const char* argv[]);
 
+// Starting a title from a payload (the helper: ProsperoUpdateJob.h, RelaunchIfPending), with the parameter
+// etaHEN's launcher passes.
+typedef struct
+{
+	uint32_t size;
+	int32_t user_id;
+	uint32_t app_opt;
+	uint64_t crash_report;
+	uint64_t check_flag;
+} SceLncAppParam;
+int sceLncUtilLaunchApp(const char* title_id, const char* argv[], SceLncAppParam* param);
+int sceSystemServiceLaunchApp(const char* title_id, const char* argv[], SceLncAppParam* param);
+uint32_t sceLncUtilGetAppIdOfRunningBigApp(void);
+int sceLncUtilGetAppTitleId(uint32_t app_id, char* title_id);
+
 // ---- libSceVideoOut ----------------------------------------------------------------------------------------
 typedef struct SceVideoOutBuffers
 {

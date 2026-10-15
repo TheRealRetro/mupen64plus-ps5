@@ -12,6 +12,7 @@
 #include "ProsperoJailbreak.h"
 #include "ProsperoNotify.h"
 #include "ProsperoSce.h"
+#include "ProsperoUpdateJob.h"
 
 #include <cstdio>
 #include <ctime>
@@ -52,6 +53,7 @@ bool WriteAtomic(const std::string& path, const std::vector<uint8_t>& data)
 }
 PrefetchResult g_last;
 bool g_have_last = false;
+int g_next_start = 0; // new games' covers this start couldn't fetch (CoversForNextStart)
 } // namespace
 
 void RememberPrefetch(const PrefetchResult& result)
@@ -73,16 +75,19 @@ void CoversRestartIfNeeded(const std::vector<GameInfo>& games, bool downloads_on
 	int fresh = 0;
 	for (const WantedCover& w : wanted)
 		fresh += g_last.attempted.count(w.file) ? 0 : 1;
+	g_next_start = 0;
 	if (wanted.empty() || (!force && fresh == 0))
 		return;
 	if (!g_have_last || !g_last.helper_ok)
 	{
+		g_next_start = fresh;
 		OrbisLog("[covers] %zu cover(s) wanted, but no helper answered at start: not restarting", wanted.size());
 		return;
 	}
 	if (!NetConnected())
 	{
 		OrbisLog("[covers] %zu cover(s) wanted; the console is offline: next start", wanted.size());
+		g_next_start = fresh;
 		return;
 	}
 	// A guard against a loop: no second restart within two minutes (one for Square: ten seconds).
@@ -96,6 +101,7 @@ void CoversRestartIfNeeded(const std::vector<GameInfo>& games, bool downloads_on
 		if (n == 1 && now - time_t(t) >= 0 && now - time_t(t) < (force ? 10 : 120))
 		{
 			OrbisLog("[covers] restarted %lld s ago: not again", (long long)(now - time_t(t)));
+			g_next_start = fresh;
 			return;
 		}
 	}
@@ -104,21 +110,32 @@ void CoversRestartIfNeeded(const std::vector<GameInfo>& games, bool downloads_on
 		fprintf(f, "%lld\n", (long long)now);
 		fclose(f);
 	}
-	const char* path = "/data/homebrew/" N64PS5_TITLE_ID "/eboot.bin";
-	if (access(path, F_OK) != 0)
-		path = "/app0/eboot.bin";
-	OrbisLog("[covers] %d new cover(s) to fetch (%zu wanted): restarting %s so the prefetch gets them", fresh,
-		wanted.size(), path);
+	// Closing and starting again: sceSystemServiceLoadExec(own eboot.bin) only closed the app on the console,
+	// so the helper starts it again once it has exited (ProsperoUpdateJob.h, RelaunchIfPending).
+	std::string why;
+	if (!updatejob::WriteRelaunch(int(getpid()), why) || !jailbreak::StartHelper())
+	{
+		unlink(updatejob::RelaunchPath().c_str());
+		OrbisLog("[covers] %d new cover(s) wanted, but the helper can't start the app again (%s): next start", fresh,
+			why.empty() ? "the ELF loader didn't answer" : why.c_str());
+		g_next_start = fresh;
+		return;
+	}
+	OrbisLog("[covers] %d new cover(s) to fetch (%zu wanted): closing, the helper starts the app again", fresh,
+		wanted.size());
 	if (show)
-		show("Downloading covers...");
+		show("Getting covers for your new games: the app restarts by itself...");
 	ProsperoNotifyFlush();
 	OrbisLogClose();
-	const int rc = sceSystemServiceLoadExec(path, nullptr);
-	if (rc == 0)
+	if (sceSystemServiceLoadExec("exit", nullptr) == 0)
 		for (int i = 0; i < 100; i++)
 			usleep(100 * 1000);
-	OrbisLogOpen("boot-after-restart");
-	OrbisLog("[covers] sceSystemServiceLoadExec(%s) -> %x: carrying on without the new covers", path, unsigned(rc));
+	_exit(0);
+}
+
+int CoversForNextStart()
+{
+	return g_next_start;
 }
 
 bool NetConnected()

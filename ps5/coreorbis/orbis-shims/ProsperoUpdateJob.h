@@ -57,4 +57,14 @@ std::string EbootMode(const std::string& app_dir);
 
 // The helper payload, at start: performs a pending job (and deletes it). Returns at once when there is none.
 void RunIfPending();
+
+// ---- starting the app again (covers for new games, frontend/fe_prefetch.h) ---------------------------------
+// The app can only download before it asks for /data, so to fetch covers for new games it closes and its
+// helper starts it again: the app writes this job (its pid), starts a fresh helper through the ELF loader and
+// closes; the helper (RelaunchIfPending) waits for it to exit and launches the title the way the home screen
+// does (sceLncUtilLaunchApp, as PS5_Vulkan's ps5vkctl and etaHEN launch titles). If no launch call works, a
+// notification says to open the app again.
+std::string RelaunchPath(); // /data/mupen64plus/update/relaunch.txt
+bool WriteRelaunch(int pid, std::string& why);
+void RelaunchIfPending();
 } // namespace updatejob
