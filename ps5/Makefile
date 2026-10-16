@@ -281,9 +281,13 @@ $(PS5_OUT)/helper_data.o: coreorbis/orbis-shims/helper_data.cpp coreorbis/orbis-
 	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PORT_WARN) -DHELPER_ELF='"$(abspath $(PS5_OUT)/Mupen64PS5-helper.elf)"' -c -o $@ $<
 
 # 3. the installer + helper, with the app folder built in
+# the GPU renderer's pipeline cache shipped with the app (a console's cache/parallel-rdp-pipelines.bin), when there
+# is one: assets/ in the app folder (the installer payload doesn't carry it)
+PIPELINE_SEED := $(if $(filter 1,$(VULKAN)),$(wildcard n64/plugins/assets/parallel-rdp-pipelines.bin))
 APP_FILES = $(APP_OUT)/eboot.bin $(APP_OUT)/sce_sys/param.json $(APP_OUT)/sce_sys/icon0.png $(APP_OUT)/sce_sys/pic0.dds \
 	$(APP_OUT)/sce_sys/pic1.dds \
-	$(APP_OUT)/sce_module/libc.prx
+	$(APP_OUT)/sce_module/libc.prx \
+	$(if $(PIPELINE_SEED),$(APP_OUT)/assets/parallel-rdp-pipelines.bin)
 APP_DATA_DEFS = -DAPP_EBOOT='"$(abspath $(APP_OUT)/eboot.bin)"' -DAPP_PARAM='"$(abspath $(APP_OUT)/sce_sys/param.json)"' \
 	-DAPP_ICON0='"$(abspath $(APP_OUT)/sce_sys/icon0.png)"' -DAPP_PIC0='"$(abspath $(APP_OUT)/sce_sys/pic0.dds)"' \
 	-DAPP_PIC1='"$(abspath $(APP_OUT)/sce_sys/pic1.dds)"' \
@@ -417,12 +421,9 @@ $(PS5_OUT)/prdp/%.o: %.cpp $(PRDP_HDRS)
 $(PS5_OUT)/prdp/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(PARALLEL_RDP_CFLAGS) $(PARALLEL_RDP_INCLUDE_DIRS) -w -c -o $@ $<
-# the pipeline cache shipped in eboot.bin (a console's cache/parallel-rdp-pipelines.bin), when there is one
-PIPELINE_SEED := $(wildcard n64/plugins/assets/parallel-rdp-pipelines.bin)
-$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS) $(PRDP_HDRS) $(PIPELINE_SEED)
+$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS) $(PRDP_HDRS)
 	@mkdir -p $(dir $@)
-	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PARALLEL_RDP_INCLUDE_DIRS) $(PORT_WARN) \
-		$(if $(PIPELINE_SEED),-DN64PS5_PIPELINE_SEED='"$(abspath $(PIPELINE_SEED))"') -c -o $@ $<
+	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PARALLEL_RDP_INCLUDE_DIRS) $(PORT_WARN) -c -o $@ $<
 $(APP_BUILD)/stubs/libSceAgc.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_canary_link_stub.c
 $(APP_BUILD)/stubs/libSceAgcDriver.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
 $(VULKAN_STUBS):
@@ -453,10 +454,18 @@ $(APP_BUILD)/eboot.elf: $(APP_BUILD)/mupen64plus-pie.elf $(NATIVE_TOOL)
 		--companion-sdk 0x08050001 --file-name eboot.elf
 	python3 tools/prepare_console_elf.py --input $@ --output $(APP_BUILD)/eboot-console-ready.elf
 
+# 0.6.3 to 0.7.2 refuse an update with a file over 32 MiB (fe_update.cpp kMaxFile): eboot.bin must stay under it
+EBOOT_MAX := 33554432
 $(APP_OUT)/eboot.bin: $(APP_BUILD)/eboot.elf $(NATIVE_TOOL)
 	@mkdir -p $(dir $@)
 	$(NATIVE_TOOL) self --sign --in $< --out $@ --magic 0x1D3D154F
 	$(NATIVE_TOOL) self --inspect --file $@
+	@size=$$(stat -c %s $@); if [ $$size -gt $(EBOOT_MAX) ]; then rm -f $@; \
+		echo "eboot.bin is $$size bytes: apps 0.6.3-0.7.2 can't update to an eboot.bin over 32 MiB" >&2; exit 1; fi
+
+$(APP_OUT)/assets/parallel-rdp-pipelines.bin: $(PIPELINE_SEED)
+	@mkdir -p $(dir $@)
+	cp $< $@
 
 # app/sce_sys/param.json is committed with the contentVersion the release ships: the homebrew.page catalog reads
 # it from the repository at the release tag. It must match VERSION; the build stops when it doesn't.

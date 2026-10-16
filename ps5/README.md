@@ -77,10 +77,15 @@ which renders on the CPU at the N64's own resolution.
 
 **Shaders shipped with the app.** Every PS5 has the same GPU and runs the same RADV, built into `eboot.bin`, so
 one console's compiled shaders suit the others. `n64/plugins/assets/parallel-rdp-pipelines.bin`, when present,
-is a copy of a console's `cache/parallel-rdp-pipelines.bin` built into `eboot.bin`; at the first start of a new
-version, the app merges it into the player's own cache (`cache/parallel-rdp-pipelines.seed` remembers it), so
-nobody waits for those compiles. A cache made by another driver (its UUID differs) is left out. To refresh it,
-copy the cache from a console that has played many games, after a build that changed RADV or paraLLEl-RDP.
+is a copy of a console's `cache/parallel-rdp-pipelines.bin` and goes into the app folder as
+`assets/parallel-rdp-pipelines.bin`. At the first start of a new version, the app merges it into the player's own
+cache (`cache/parallel-rdp-pipelines.seed` remembers it), so nobody waits for those compiles. A cache made by
+another driver (its UUID differs) is left out. To refresh it, copy the cache from a console that has played
+many games, after a build that changed RADV or paraLLEl-RDP.
+
+**`eboot.bin` stays under 32 MiB.** The in-app updater of 0.6.3 to 0.7.2 refuses a file over 32 MiB, so those
+versions could never update to a bigger `eboot.bin`; the build stops if it gets there. Large data goes into the
+app folder as files of its own.
 
 **What the core needs from SDL, libpng and dlopen is replaced:**
 

@@ -47,7 +47,8 @@ namespace
 {
 constexpr size_t kMaxReleaseJson = 1u << 20;
 constexpr size_t kMaxZip = 64u << 20;
-constexpr size_t kMaxFile = 32u << 20;
+// 0.6.3 to 0.7.2 refuse a file over 32 MiB: the Makefile keeps eboot.bin under that, so they can still update
+constexpr size_t kMaxFile = 64u << 20;
 const char* const kAsset = N64PS5_RELEASE_ZIP; // not PPSA99064.zip: see RELEASE_ZIP in the Makefile
 
 // ---- a small JSON reader (the release object) --------------------------------------------------------------
@@ -454,39 +455,6 @@ bool ParseRelease(const std::string& body, Release& r, std::string& why)
 }
 
 // ---- installing ------------------------------------------------------------------------------------------
-// Every copy of the app folder the console can see (ShadowMountPlus's scan paths).
-std::vector<std::string> AppFolders()
-{
-	std::vector<std::string> out;
-	std::vector<std::string> bases;
-	const char* hb = getenv("N64PS5_PS5_HOMEBREW"); // host tests
-	bases.push_back(hb && *hb ? hb : "/data/homebrew");
-	if (!(hb && *hb))
-	{
-		char buf[64];
-		for (int i = 0; i < 8; i++)
-		{
-			snprintf(buf, sizeof(buf), "/mnt/usb%d/homebrew", i);
-			bases.push_back(buf);
-			snprintf(buf, sizeof(buf), "/mnt/usb%d", i);
-			bases.push_back(buf);
-		}
-		for (int i = 0; i < 2; i++)
-		{
-			snprintf(buf, sizeof(buf), "/mnt/ext%d/homebrew", i);
-			bases.push_back(buf);
-			snprintf(buf, sizeof(buf), "/mnt/ext%d", i);
-			bases.push_back(buf);
-		}
-	}
-	for (const std::string& b : bases)
-	{
-		const std::string dir = b + "/" N64PS5_TITLE_ID;
-		if (OrbisIsFile(dir + "/sce_sys/param.json") && OrbisIsFile(dir + "/eboot.bin"))
-			out.push_back(dir);
-	}
-	return out;
-}
 
 // A path inside the zip we accept: under PPSA99064/, no "..", no absolute path or backslash.
 bool SafeEntry(const std::string& name, std::string& rel)
@@ -747,7 +715,7 @@ void OfferUpdate(UpdateOffer& offer, bool ask)
 	std::vector<std::string> folders;
 	if (ok)
 	{
-		folders = AppFolders();
+		folders = OrbisAppFolders();
 		if (folders.empty())
 		{
 			ok = false;

@@ -30,6 +30,10 @@ std::string OrbisDir(const char* sub);
 bool OrbisPathsInit();
 // Folders that hold ROMs and exist right now (internal first, then USB drives).
 std::vector<std::string> OrbisRomRoots();
+// Every copy of the app folder (<base>/<TITLE_ID> with sce_sys/param.json and eboot.bin) in ShadowMountPlus's scan
+// paths: /data/homebrew, then USB and extended storage, at their root or in homebrew/ (N64PS5_PS5_HOMEBREW
+// replaces them all for the host tests).
+std::vector<std::string> OrbisAppFolders();
 
 bool OrbisIsDir(const std::string& path);
 bool OrbisIsFile(const std::string& path);

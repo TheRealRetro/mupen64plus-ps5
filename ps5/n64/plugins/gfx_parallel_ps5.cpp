@@ -108,48 +108,61 @@ void LoadPipelineCache(Vulkan::Device& device)
 		ok ? "" : " (not usable, starting a new one)");
 }
 
-// The cache shipped inside the app (n64/plugins/assets/parallel-rdp-pipelines.bin, a console's own cache file):
-// every PS5 has the same GPU and runs the same RADV, built into eboot.bin, so its pipelines spare new players
-// the first-time compiles (a short pause the first time a scene appears). It is merged into the player's cache
-// once per shipped file -- cache/parallel-rdp-pipelines.seed remembers which -- and saved with it. A console
-// whose driver differs (another GPU) is told apart by the cache's UUID and keeps its own cache only.
-#ifdef N64PS5_PIPELINE_SEED
-__asm__(".section .rodata\n"
-		".balign 16\n"
-		".global n64ps5_pipeline_seed_begin\nn64ps5_pipeline_seed_begin:\n"
-		".incbin \"" N64PS5_PIPELINE_SEED "\"\n"
-		".global n64ps5_pipeline_seed_end\nn64ps5_pipeline_seed_end:\n"
-		".previous\n");
-extern "C" const unsigned char n64ps5_pipeline_seed_begin[];
-extern "C" const unsigned char n64ps5_pipeline_seed_end[];
-
+// The cache shipped with the app: assets/parallel-rdp-pipelines.bin in the app folder (n64/plugins/assets/ in the
+// source), a console's own cache file. Every PS5 has the same GPU and runs the same RADV, built into eboot.bin,
+// so its pipelines spare new players the first-time compiles (a short pause the first time a scene appears). It
+// is merged into the player's cache once per shipped file -- cache/parallel-rdp-pipelines.seed remembers which --
+// and saved with it. A console whose driver differs (another GPU) is told apart by the cache's UUID and keeps its
+// own cache only. A file next to eboot.bin, not inside it: 0.6.3 to 0.7.2 can't update to an eboot.bin over 32 MiB.
 std::string SeedMarkerPath()
 {
 	return OrbisDir("cache") + "/parallel-rdp-pipelines.seed";
 }
 
-// Which shipped cache this is: the hash Granite writes after the driver's 16-byte UUID, and the size.
-std::string SeedId(const unsigned char* data, size_t size)
+std::string ShippedPipelineCachePath()
 {
-	if (size < 24)
-		return "";
-	uint64_t hash = 0;
-	memcpy(&hash, data + 16, sizeof(hash));
-	char id[48];
-	snprintf(id, sizeof(id), "%016llx-%zu", (unsigned long long)hash, size);
-	return id;
+	std::vector<std::string> dirs = {"/app0"}; // the running app, where the sandbox mount is still visible
+	for (const std::string& d : OrbisAppFolders())
+		dirs.push_back(d);
+	for (const std::string& d : dirs)
+	{
+		const std::string path = d + "/assets/parallel-rdp-pipelines.bin";
+		if (OrbisIsFile(path))
+			return path;
+	}
+	return "";
 }
-#endif
 
 // True when the shipped cache was merged now (the caller then saves the result).
 bool MergeShippedPipelineCache(Vulkan::Device& device)
 {
-#ifdef N64PS5_PIPELINE_SEED
-	const unsigned char* data = n64ps5_pipeline_seed_begin;
-	const size_t size = size_t(n64ps5_pipeline_seed_end - n64ps5_pipeline_seed_begin);
-	const std::string id = SeedId(data, size);
-	if (id.empty())
+	const std::string path = ShippedPipelineCachePath();
+	if (path.empty())
+	{
+		OrbisLog("[gpu] no pipeline cache shipped with the app (assets/parallel-rdp-pipelines.bin)");
 		return false;
+	}
+	std::vector<uint8_t> data;
+	if (FILE* f = fopen(path.c_str(), "rb"))
+	{
+		fseek(f, 0, SEEK_END);
+		const long size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		if (size > 24)
+		{
+			data.resize(size_t(size));
+			if (fread(data.data(), 1, data.size(), f) != data.size())
+				data.clear();
+		}
+		fclose(f);
+	}
+	if (data.empty())
+		return false;
+	// which shipped cache this is: the hash Granite writes after the driver's 16-byte UUID, and the size
+	uint64_t hash = 0;
+	memcpy(&hash, data.data() + 16, sizeof(hash));
+	char id[48];
+	snprintf(id, sizeof(id), "%016llx-%zu", (unsigned long long)hash, data.size());
 	char done[48] = "";
 	if (FILE* f = fopen(SeedMarkerPath().c_str(), "r"))
 	{
@@ -157,25 +170,24 @@ bool MergeShippedPipelineCache(Vulkan::Device& device)
 			done[0] = 0;
 		fclose(f);
 	}
-	if (id == done)
+	if (strcmp(id, done) == 0)
+	{
+		OrbisLog("[gpu] pipeline cache shipped with the app (%s): merged before", path.c_str());
 		return false;
+	}
 	const auto t0 = std::chrono::steady_clock::now();
-	const bool ok = device.merge_pipeline_cache(data, size);
+	const bool ok = device.merge_pipeline_cache(data.data(), data.size());
 	const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-	OrbisLog("[gpu] pipeline cache shipped with the app (%zu KiB): %s in %.0f ms", size >> 10,
+	OrbisLog("[gpu] pipeline cache shipped with the app (%s, %zu KiB): %s in %.0f ms", path.c_str(), data.size() >> 10,
 		ok ? "merged" : "made by another driver or GPU, not used", ms);
 	OrbisMkdirs(OrbisDir("cache"));
 	if (FILE* f = fopen(SeedMarkerPath().c_str(), "w"))
 	{
-		fputs(id.c_str(), f);
+		fputs(id, f);
 		fclose(f);
 		chmod(SeedMarkerPath().c_str(), 0666);
 	}
 	return ok;
-#else
-	(void)device;
-	return false;
-#endif
 }
 
 void SavePipelineCache()

@@ -102,6 +102,39 @@ std::vector<std::string> OrbisRomRoots()
 	return roots;
 }
 
+std::vector<std::string> OrbisAppFolders()
+{
+	std::vector<std::string> out;
+	std::vector<std::string> bases;
+	const char* hb = getenv("N64PS5_PS5_HOMEBREW"); // host tests
+	bases.push_back(hb && *hb ? hb : "/data/homebrew");
+	if (!(hb && *hb))
+	{
+		char buf[64];
+		for (int i = 0; i < 8; i++)
+		{
+			snprintf(buf, sizeof(buf), "/mnt/usb%d/homebrew", i);
+			bases.push_back(buf);
+			snprintf(buf, sizeof(buf), "/mnt/usb%d", i);
+			bases.push_back(buf);
+		}
+		for (int i = 0; i < 2; i++)
+		{
+			snprintf(buf, sizeof(buf), "/mnt/ext%d/homebrew", i);
+			bases.push_back(buf);
+			snprintf(buf, sizeof(buf), "/mnt/ext%d", i);
+			bases.push_back(buf);
+		}
+	}
+	for (const std::string& b : bases)
+	{
+		const std::string dir = b + "/" N64PS5_TITLE_ID;
+		if (OrbisIsFile(dir + "/sce_sys/param.json") && OrbisIsFile(dir + "/eboot.bin"))
+			out.push_back(dir);
+	}
+	return out;
+}
+
 // Lines logged before the log file is open (the native app logs its jailbreak before /data is visible).
 static std::vector<std::string>& EarlyLines()
 {
