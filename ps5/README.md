@@ -4,7 +4,7 @@ mupen64plus-core 2.6.0, the Nintendo 64 emulator, as a **native home-screen app*
 shelf with covers, DualSense support and save states. The release is the app folder itself (`eboot.bin` and
 its files): no payload to send.
 
-- `../mupen64plus-core` is the original core source, **unmodified**.
+- `../mupen64plus-core` is the original core source, with one change: ROMs up to 252 MB (ROM hacks bigger than a 64 MB cartridge): `src/device/memory/memory.h` and `src/device/cart/cart_rom.{c,h}`, marked `Mupen64Plus PS5`.
 - Everything that makes it a PS5 app is in this folder:
   - `n64/`: the core's PS5 side and its built-in plugins;
   - `coreorbis/`: the PS5 layer;
@@ -287,7 +287,7 @@ N64PS5_PS5_ROOT=/tmp/n64 N64PS5_HOST_DUMP=150 N64PS5_HOST_MAX_FLIPS=200 build/ho
 The run writes flip 150 to a `.ppm` file. `N64PS5_HOST_PAD="frame:buttons;..."` scripts the pad (see
 `host/sce_host.cpp`).
 
-**Dynarec.** `new_dynarec.c` is built with `-Dmprotect=n64ps5_jit_mprotect` (the core stays unmodified),
+**Dynarec.** `new_dynarec.c` is built with `-Dmprotect=n64ps5_jit_mprotect` (no change to the core's source),
 its NASM stubs are translated to GNU syntax in `n64/core/linkage_x64.S`, and the struct offsets they need are
 generated from the core's `asm_defines.c` with its own `tools/gen_asm_script.sh`. On the host,
 `N64PS5_JIT=direct` exercises the PS5's direct-memory way (an anonymous RWX mapping stands in for it).

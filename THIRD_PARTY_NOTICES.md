@@ -5,7 +5,7 @@ Mupen64Plus PS5 as a whole (the `eboot.bin` it builds) is distributed under the 
 
 | Part | Where | License |
 | --- | --- | --- |
-| mupen64plus-core 2.6.0 (unmodified) | `mupen64plus-core/` | GPL-2.0-or-later (`mupen64plus-core/LICENSES`) |
+| mupen64plus-core 2.6.0 (changed for ROMs bigger than 64 MB: `memory.h`, `cart_rom.c/.h`, marked `Mupen64Plus PS5`) | `mupen64plus-core/` | GPL-2.0-or-later (`mupen64plus-core/LICENSES`) |
 | The PS5 port: plugins glue, PS5 layer, frontend, build | `ps5/` | MIT (per-file SPDX headers) |
 | ps5-native-app-boilerplate tooling (startup code, eboot builder and signer, libc.prx builder) | `ps5/proto/native/` | GPL-3.0-or-later |
 | mupen64plus-rsp-cxd4 | `ps5/third_party/rsp-cxd4/` | CC0-1.0 (`COPYING`) |

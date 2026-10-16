@@ -73,7 +73,18 @@ FE_INCBIN(n64ps5_rom_catalog, M64P_INI_PATH)
 namespace
 {
 constexpr int kFrontendApiVersion = 0x020106;
-constexpr size_t kMaxRomSize = 64u << 20; // the biggest N64 cartridges are 64 MiB
+// the biggest N64 cartridges are 64 MiB, ROM hacks can fill the whole cartridge space (the core's CART_ROM_MAX_SIZE)
+constexpr size_t kMaxRomSize = 252u << 20;
+
+std::string RomSizeError(long size)
+{
+	if (size <= 0)
+		return "Not an N64 ROM (the file is empty)";
+	char text[96];
+	snprintf(text, sizeof(text), "Too big for an N64 ROM (%.1f MB, the most is %zu MB)", double(size) / (1 << 20),
+		kMaxRomSize >> 20);
+	return text;
+}
 
 double Now()
 {
@@ -334,10 +345,11 @@ bool ReadWholeFile(const std::string& path, std::vector<uint8_t>& out, std::stri
 	fseek(f, 0, SEEK_END);
 	const long size = ftell(f);
 	fseek(f, 0, SEEK_SET);
+	OrbisLog("[emu] ROM file: %ld bytes", size);
 	if (size <= 0 || size_t(size) > kMaxRomSize)
 	{
 		fclose(f);
-		*error = "Not an N64 ROM (wrong size)";
+		*error = RomSizeError(size);
 		return false;
 	}
 	out.resize(size_t(size));
@@ -371,8 +383,11 @@ bool ReadZippedRom(const std::string& path, std::vector<uint8_t>& out, std::stri
 		}
 	}
 	bool ok = false;
-	if (best == 0 || best > kMaxRomSize)
+	OrbisLog("[emu] ROM in the zip: %s, %lu bytes", best_name, best);
+	if (best == 0)
 		*error = "No N64 ROM in the zip file";
+	else if (best > kMaxRomSize)
+		*error = RomSizeError(long(best));
 	else if (unzLocateFile(z, best_name, 0) != UNZ_OK || unzOpenCurrentFile(z) != UNZ_OK)
 		*error = "Can't read the zip file";
 	else

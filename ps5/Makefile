@@ -20,8 +20,9 @@
 #   3. build/ps5/Mupen64PS5.elf           installer + helper, with the app folder from step 2 built in
 #
 # What goes into eboot.bin:
-#   - mupen64plus-core 2.6.0 (../mupen64plus-core, unmodified), with its x86-64 dynarec, minus the parts that need
-#     SDL/OpenGL/libpng/dlopen, which n64/core/*.c replace; n64/sdl is the bit of SDL it still uses;
+#   - mupen64plus-core 2.6.0 (../mupen64plus-core, changed only for ROMs up to 252 MiB), with its x86-64 dynarec,
+#     minus the parts that need SDL/OpenGL/libpng/dlopen, which n64/core/*.c replace; n64/sdl is the bit of SDL it
+#     still uses;
 #   - its plugins, linked in (n64/plugins): mupen64plus-rsp-cxd4 (LLE RSP) behind mupen64plus-rsp-hle (HLE
 #     audio), angrylion-rdp-plus (software RDP/VI), AudioOut and DualSense input;
 #   - the frontend (shelf, menus, covers) and the PS5 layer (coreorbis).
@@ -62,6 +63,8 @@ APP_OUT := $(APP_BUILD)/$(TITLE_ID)
 
 M64 := ../mupen64plus-core
 M64SRC := $(M64)/src
+# the core's headers: a change to one rebuilds the core (and the port's C files, which include some of them)
+M64_HDRS := $(shell find $(M64SRC) -name '*.h')
 ZLIB := third_party/zlib
 CXD4 := third_party/rsp-cxd4
 RSPHLE := third_party/rsp-hle/src
@@ -196,16 +199,16 @@ PS5_ZLIB_OBJ := $(patsubst $(ZLIB)/%.c,$(PS5_OUT)/zlib/%.o,$(ZLIB_SRC))
 ps5: $(PS5_OUT)/Mupen64PS5.elf
 
 # mupen64plus-core: third-party C, its own warnings are not ours
-$(PS5_OUT)/m64/%.o: $(M64SRC)/%.c
+$(PS5_OUT)/m64/%.o: $(M64SRC)/%.c $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(CORE_DEFS) $(CORE_INCS) -w -c -o $@ $<
 
-$(PS5_OUT)/m64/device/r4300/new_dynarec/new_dynarec.o: $(M64SRC)/device/r4300/new_dynarec/new_dynarec.c
+$(PS5_OUT)/m64/device/r4300/new_dynarec/new_dynarec.o: $(M64SRC)/device/r4300/new_dynarec/new_dynarec.c $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(CORE_DEFS) $(CORE_INCS) $(DYNAREC_FLAGS) -w -c -o $@ $<
 
 # the struct offsets the dynarec's assembly needs (the core's tools/gen_asm_script.sh, on our compiler's object)
-$(PS5_OUT)/gen/asm_defines.o: $(M64SRC)/asm_defines/asm_defines.c
+$(PS5_OUT)/gen/asm_defines.o: $(M64SRC)/asm_defines/asm_defines.c $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(CORE_DEFS) $(CORE_INCS) -w -c -o $@ $<
 $(PS5_OUT)/gen/asm_defines_gas.h: $(PS5_OUT)/gen/asm_defines.o
@@ -227,7 +230,7 @@ $(PS5_OUT)/n64/n64/plugins/gfx_ps5.o: n64/plugins/gfx_ps5.c $(PORT_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(GFX_INCS) -Wall -Wextra -Werror -Wno-unused-parameter -c -o $@ $<
 
-$(PS5_OUT)/n64/%.o: %.c $(PORT_HDRS)
+$(PS5_OUT)/n64/%.o: %.c $(PORT_HDRS) $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(CORE_DEFS) $(CORE_INCS) -In64 -In64/core -Wall -Wextra -Werror -Wno-unused-parameter -c -o $@ $<
 
@@ -492,15 +495,15 @@ HOST_ZLIB_OBJ := $(patsubst $(ZLIB)/%.c,$(HOST_OUT)/zlib/%.o,$(ZLIB_SRC))
 
 host: $(HOST_OUT)/mupen64plus-ps5-host $(HOST_OUT)/mupen64plus-ps5-installer $(HOST_OUT)/mupen64plus-ps5-helper
 
-$(HOST_OUT)/m64/%.o: $(M64SRC)/%.c
+$(HOST_OUT)/m64/%.o: $(M64SRC)/%.c $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(CORE_DEFS) $(CORE_INCS) -w -c -o $@ $<
 
-$(HOST_OUT)/m64/device/r4300/new_dynarec/new_dynarec.o: $(M64SRC)/device/r4300/new_dynarec/new_dynarec.c
+$(HOST_OUT)/m64/device/r4300/new_dynarec/new_dynarec.o: $(M64SRC)/device/r4300/new_dynarec/new_dynarec.c $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(CORE_DEFS) $(CORE_INCS) $(DYNAREC_FLAGS) -w -c -o $@ $<
 
-$(HOST_OUT)/gen/asm_defines.o: $(M64SRC)/asm_defines/asm_defines.c
+$(HOST_OUT)/gen/asm_defines.o: $(M64SRC)/asm_defines/asm_defines.c $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(CORE_DEFS) $(CORE_INCS) -w -c -o $@ $<
 $(HOST_OUT)/gen/asm_defines_gas.h: $(HOST_OUT)/gen/asm_defines.o
@@ -522,7 +525,7 @@ $(HOST_OUT)/n64/n64/plugins/gfx_ps5.o: n64/plugins/gfx_ps5.c $(PORT_HDRS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(GFX_INCS) -Wall -Wextra -Werror -Wno-unused-parameter -c -o $@ $<
 
-$(HOST_OUT)/n64/%.o: %.c $(PORT_HDRS)
+$(HOST_OUT)/n64/%.o: %.c $(PORT_HDRS) $(M64_HDRS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=gnu11 $(HOST_OPT) $(CORE_DEFS) $(CORE_INCS) -In64 -In64/core -Wall -Wextra -Werror -Wno-unused-parameter -c -o $@ $<
 

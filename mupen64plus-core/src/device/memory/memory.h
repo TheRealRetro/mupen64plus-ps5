@@ -28,7 +28,9 @@
 #include "osal/preproc.h"
 
 enum { RDRAM_MAX_SIZE = 0x800000 };
-enum { CART_ROM_MAX_SIZE = 0x4000000 };
+/* Mupen64Plus PS5: ROM hacks can be bigger than the 64 MiB of the biggest cartridges.
+ * Up to 252 MiB, all of dom1 addr2 (0x10000000 - 0x1fbfffff); upstream lifted the limit after 2.6.0 too. */
+enum { CART_ROM_MAX_SIZE = 0xfc00000 };
 enum { DD_ROM_MAX_SIZE = 0x400000 };
 
 typedef void (*read32fn)(void*,uint32_t,uint32_t*);

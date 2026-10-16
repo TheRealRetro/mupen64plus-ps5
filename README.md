@@ -81,7 +81,7 @@ Never reuse or lower a version.
 
 ## Repository layout
 
-- `mupen64plus-core/`: the original core source, **unmodified**.
+- `mupen64plus-core/`: the original core source, with one change: ROMs up to 252 MB (ROM hacks bigger than a 64 MB cartridge): `src/device/memory/memory.h` and `src/device/cart/cart_rom.{c,h}`, marked `Mupen64Plus PS5`.
 - `ps5/`: the port (plugins, PS5 layer, frontend, build).
 - `release-notes/`: one file per release.
 

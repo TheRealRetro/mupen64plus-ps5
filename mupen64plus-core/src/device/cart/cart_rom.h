@@ -34,6 +34,8 @@ struct cart_rom
 {
     uint8_t* rom;
     size_t rom_size;
+    /* Mupen64Plus PS5: cart addresses wrap at 64 MiB, as before, unless the ROM is bigger */
+    uint32_t addr_mask;
 
     uint32_t last_write;
 
@@ -41,9 +43,9 @@ struct cart_rom
     struct pi_controller* pi;
 };
 
-static osal_inline uint32_t rom_address(uint32_t address)
+static osal_inline uint32_t rom_address(const struct cart_rom* cart_rom, uint32_t address)
 {
-    return (address & 0x03fffffc);
+    return (address & cart_rom->addr_mask & ~UINT32_C(3));
 }
 
 void init_cart_rom(struct cart_rom* cart_rom,

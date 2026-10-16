@@ -32,7 +32,9 @@
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 
-#define CART_ROM_ADDR_MASK UINT32_C(0x03ffffff);
+#define CART_ROM_ADDR_MASK UINT32_C(0x03ffffff)
+/* Mupen64Plus PS5: for ROM hacks bigger than 64 MiB (see CART_ROM_MAX_SIZE) */
+#define CART_ROM_ADDR_MASK_BIG UINT32_C(0x0fffffff)
 
 
 void init_cart_rom(struct cart_rom* cart_rom,
@@ -42,6 +44,7 @@ void init_cart_rom(struct cart_rom* cart_rom,
 {
     cart_rom->rom = rom;
     cart_rom->rom_size = rom_size;
+    cart_rom->addr_mask = (rom_size > CART_ROM_ADDR_MASK + 1) ? CART_ROM_ADDR_MASK_BIG : CART_ROM_ADDR_MASK;
 
     cart_rom->r4300 = r4300;
     cart_rom->pi = pi;
@@ -56,7 +59,7 @@ void poweron_cart_rom(struct cart_rom* cart_rom)
 void read_cart_rom(void* opaque, uint32_t address, uint32_t* value)
 {
     struct cart_rom* cart_rom = (struct cart_rom*)opaque;
-    uint32_t addr = rom_address(address);
+    uint32_t addr = rom_address(cart_rom, address);
 
     if (cart_rom->pi->regs[PI_STATUS_REG] & PI_STATUS_IO_BUSY)
     {
@@ -84,7 +87,8 @@ void write_cart_rom(void* opaque, uint32_t address, uint32_t value, uint32_t mas
 
 unsigned int cart_rom_dma_read(void* opaque, const uint8_t* dram, uint32_t dram_addr, uint32_t cart_addr, uint32_t length)
 {
-    cart_addr &= CART_ROM_ADDR_MASK;
+    struct cart_rom* cart_rom = (struct cart_rom*)opaque;
+    cart_addr &= cart_rom->addr_mask;
 
     DebugMessage(M64MSG_WARNING, "DMA Writing to CART_ROM: 0x%" PRIX32 " -> 0x%" PRIX32 " (0x%" PRIX32 ")", dram_addr, cart_addr, length);
 
@@ -97,7 +101,7 @@ unsigned int cart_rom_dma_write(void* opaque, uint8_t* dram, uint32_t dram_addr,
     struct cart_rom* cart_rom = (struct cart_rom*)opaque;
     const uint8_t* mem = cart_rom->rom;
 
-    cart_addr &= CART_ROM_ADDR_MASK;
+    cart_addr &= cart_rom->addr_mask;
 
     if (cart_addr + length < cart_rom->rom_size)
     {
