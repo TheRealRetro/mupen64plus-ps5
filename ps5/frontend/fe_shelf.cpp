@@ -4,6 +4,7 @@
 #include "fe_shelf.h"
 
 #include "fe_covers.h"
+#include "fe_emu.h"
 #include "fe_games.h"
 #include "fe_menu.h"
 #include "fe_prefetch.h"
@@ -608,6 +609,41 @@ bool Confirm(const char* question)
 	}
 }
 
+// A game with a state saved when the player last left it: 1 continue there, 0 start over, -1 back to the list.
+int AskResume(const std::string& saved_at)
+{
+	std::vector<uint32_t> saved(ps5video::Surface(), ps5video::Surface() + size_t(W) * H);
+	ps5input::Poll();
+	uint32_t prev = ps5input::Pad(0).buttons;
+	ps5video::DarkenRect(0, 0, W, H);
+	const int bw = 1100, bh = 300, bx = (W - bw) / 2, by = (H - bh) / 2;
+	ps5video::FillRect(bx - 3, by - 3, bw + 6, bh + 6, Rgb(150, 125, 255));
+	ps5video::FillRect(bx, by, bw, bh, Rgb(26, 24, 48));
+	DrawText(bx + 50, by + 50, "Continue where you left off?", 5, Rgb(240, 240, 250));
+	DrawText(bx + 50, by + 135, ("Saved " + saved_at).c_str(), 3, Rgb(170, 160, 210));
+	DrawText(bx + 50, by + 215,
+		(std::string(icon::Cross) + " Continue       " + icon::Square + " Start over       " + icon::Circle + " Back").c_str(), 3,
+		Rgb(205, 200, 228));
+	ps5video::Present(0, 0, 0, 0, true);
+	for (;;)
+	{
+		ps5input::Poll();
+		const uint32_t cur = ps5input::Pad(0).buttons;
+		const uint32_t down = cur & ~prev;
+		prev = cur;
+		if (down & SCE_PAD_BUTTON_CROSS)
+			return 1;
+		if (down & SCE_PAD_BUTTON_SQUARE)
+			return 0;
+		if (down & (SCE_PAD_BUTTON_CIRCLE | SCE_PAD_BUTTON_OPTIONS))
+		{
+			memcpy(ps5video::Surface(), saved.data(), saved.size() * 4);
+			return -1;
+		}
+		ps5video::Present(0, 0, 1, 1, true);
+	}
+}
+
 // ---- state kept between visits to the shelf (the game list, its covers) -----------------------------------
 struct ShelfState
 {
@@ -706,9 +742,11 @@ void ShelfShutdown()
 	S().covers.Stop();
 }
 
-std::string Shelf()
+std::string Shelf(bool* resume)
 {
 	Settings& cfg = Config();
+	if (resume)
+		*resume = false;
 	ShelfState& st = S();
 	N64_STAGE(Shelf, "pool");
 	Pool pool;
@@ -831,9 +869,20 @@ std::string Shelf()
 		}
 		if ((down & SCE_PAD_BUTTON_CROSS) && n > 0)
 		{
-			cfg.last_rom = st.games[size_t(sel)].path;
-			cfg.Save();
-			return st.games[size_t(sel)].path;
+			const std::string path = st.games[size_t(sel)].path;
+			std::string saved_at;
+			const int choice = cfg.resume && emu::ResumeStateExists(path, &saved_at) ? AskResume(saved_at) : 0;
+			if (choice >= 0)
+			{
+				cfg.last_rom = path;
+				cfg.Save();
+				if (resume)
+					*resume = choice == 1;
+				return path;
+			}
+			ps5input::Poll();
+			prev = ps5input::Pad(0).buttons;
+			dirty = true;
 		}
 		if (down & SCE_PAD_BUTTON_TOUCH_PAD)
 		{

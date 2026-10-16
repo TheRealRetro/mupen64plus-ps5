@@ -265,12 +265,14 @@ enum SettingRow
 	S_GPU_SYNC,
 #endif
 	S_CPU,
+	S_OVERCLOCK,
 	S_RSP_AUDIO,
 	S_THREADS,
 	S_PAK,
 	S_DEADZONE,
 	S_INVERT,
 	S_INVERT_C,
+	S_RESUME,
 	S_VIEW,
 	S_COVERS,
 	S_UPDATES,
@@ -294,12 +296,14 @@ std::string SettingLabel(int s)
 		case S_GPU_SYNC: return "GPU sync *";
 #endif
 		case S_CPU: return "CPU core *";
+		case S_OVERCLOCK: return "CPU overclock *";
 		case S_RSP_AUDIO: return "Audio processing *";
 		case S_THREADS: return "Render threads *";
 		case S_PAK: return "Controller pak *";
 		case S_DEADZONE: return "Stick dead zone";
 		case S_INVERT: return "Invert left stick";
 		case S_INVERT_C: return "Invert right stick";
+		case S_RESUME: return "Continue where you left off";
 		case S_VIEW: return "Game list view";
 		case S_COVERS: return "Download covers";
 		case S_UPDATES: return "Check for updates";
@@ -339,6 +343,11 @@ std::string SettingValue(int s)
 		case S_GPU_SYNC: return !c.gpu ? "GPU only" : c.gpu_sync ? "Accurate" : "Fast";
 #endif
 		case S_CPU: return c.dynarec ? "Dynarec" : "Interpreter";
+		case S_OVERCLOCK:
+		{
+			static const char* const kSpeeds[] = {"Off", "2x", "4x"};
+			return kSpeeds[std::clamp(c.overclock, 0, 2)];
+		}
 		case S_RSP_AUDIO: return c.hle_audio ? "Fast (HLE)" : "Accurate (LLE)";
 		case S_THREADS: snprintf(buf, sizeof(buf), "%d", c.render_threads); return buf;
 		case S_PAK: return PakName(c.pak);
@@ -349,6 +358,7 @@ std::string SettingValue(int s)
 			static const char* const kInvert[] = {"Off", "X (left/right)", "Y (up/down)", "X and Y"};
 			return kInvert[(s == S_INVERT ? c.invert_stick : c.invert_c_stick) & 3];
 		}
+		case S_RESUME: return c.resume ? "Ask" : "Off";
 		case S_VIEW:
 		{
 			static const char* const kViews[] = {"Shelf (3D)", "Grid", "List"};
@@ -396,6 +406,7 @@ void ChangeSetting(int s, int dir)
 			break;
 #endif
 		case S_CPU: c.dynarec = !c.dynarec; break;
+		case S_OVERCLOCK: c.overclock = (std::clamp(c.overclock, 0, 2) + dir + 3) % 3; break;
 		case S_RSP_AUDIO: c.hle_audio = !c.hle_audio; break;
 		case S_THREADS:
 		{
@@ -412,6 +423,7 @@ void ChangeSetting(int s, int dir)
 		}
 		case S_INVERT: c.invert_stick = (c.invert_stick + dir + 4) & 3; break;
 		case S_INVERT_C: c.invert_c_stick = (c.invert_c_stick + dir + 4) & 3; break;
+		case S_RESUME: c.resume = !c.resume; break;
 		case S_VIEW: c.game_view = (std::clamp(c.game_view, 0, 2) + dir + 3) % 3; break;
 		case S_COVERS: c.covers_download = !c.covers_download; break;
 		case S_UPDATES: c.updates = !c.updates; break;

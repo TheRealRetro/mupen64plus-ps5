@@ -417,9 +417,12 @@ $(PS5_OUT)/prdp/%.o: %.cpp $(PRDP_HDRS)
 $(PS5_OUT)/prdp/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(PS5_CC) -std=gnu11 $(PS5_OPT) $(PARALLEL_RDP_CFLAGS) $(PARALLEL_RDP_INCLUDE_DIRS) -w -c -o $@ $<
-$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS) $(PRDP_HDRS)
+# the pipeline cache shipped in eboot.bin (a console's cache/parallel-rdp-pipelines.bin), when there is one
+PIPELINE_SEED := $(wildcard n64/plugins/assets/parallel-rdp-pipelines.bin)
+$(PS5_OUT)/n64/n64/plugins/gfx_parallel_ps5.o: n64/plugins/gfx_parallel_ps5.cpp $(PORT_HDRS) $(PRDP_HDRS) $(PIPELINE_SEED)
 	@mkdir -p $(dir $@)
-	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PARALLEL_RDP_INCLUDE_DIRS) $(PORT_WARN) -c -o $@ $<
+	$(PS5_CXX) -std=c++17 $(PS5_OPT) $(DEFS) $(INCS) $(PARALLEL_RDP_INCLUDE_DIRS) $(PORT_WARN) \
+		$(if $(PIPELINE_SEED),-DN64PS5_PIPELINE_SEED='"$(abspath $(PIPELINE_SEED))"') -c -o $@ $<
 $(APP_BUILD)/stubs/libSceAgc.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_canary_link_stub.c
 $(APP_BUILD)/stubs/libSceAgcDriver.so: $(PS5_VULKAN)/vendor/ps5/sdk/stubs/agc_driver_canary_link_stub.c
 $(VULKAN_STUBS):

@@ -752,6 +752,41 @@ bool Device::init_pipeline_cache(const uint8_t *data, size_t size)
 	return table->vkCreatePipelineCache(device, &info, nullptr, &pipeline_cache) == VK_SUCCESS;
 }
 
+// Mupen64Plus PS5: the same checks as init_pipeline_cache, then vkMergePipelineCaches into the current cache.
+bool Device::merge_pipeline_cache(const uint8_t *data, size_t size)
+{
+	static const auto uuid_size = sizeof(gpu_props.pipelineCacheUUID);
+	static const auto hash_size = sizeof(Util::Hash);
+
+	if (pipeline_cache == VK_NULL_HANDLE || !data || size <= uuid_size + hash_size)
+		return false;
+	if (memcmp(data, gpu_props.pipelineCacheUUID, uuid_size) != 0)
+	{
+		LOGI("Pipeline cache to merge is from another driver or GPU.\n");
+		return false;
+	}
+
+	Util::Hash reference_hash;
+	memcpy(&reference_hash, data + uuid_size, sizeof(reference_hash));
+	VkPipelineCacheCreateInfo info = { VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO };
+	info.initialDataSize = size - uuid_size - hash_size;
+	info.pInitialData = data + uuid_size + hash_size;
+	Util::Hasher h;
+	h.data(static_cast<const uint8_t *>(info.pInitialData), info.initialDataSize);
+	if (h.get() != reference_hash)
+	{
+		LOGW("Pipeline cache to merge is corrupt.\n");
+		return false;
+	}
+
+	VkPipelineCache other = VK_NULL_HANDLE;
+	if (table->vkCreatePipelineCache(device, &info, nullptr, &other) != VK_SUCCESS)
+		return false;
+	const bool ok = table->vkMergePipelineCaches(device, pipeline_cache, 1, &other) == VK_SUCCESS;
+	table->vkDestroyPipelineCache(device, other, nullptr);
+	return ok;
+}
+
 void Device::init_pipeline_cache()
 {
 #ifdef GRANITE_VULKAN_SYSTEM_HANDLES

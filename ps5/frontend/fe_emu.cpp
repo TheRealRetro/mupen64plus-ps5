@@ -221,6 +221,13 @@ struct State
 	uint32_t prev_buttons = 0;
 	bool block_until_release = false;
 	int pending_save_slot = -1;
+	// "continue where you left off": the state loaded at the first VI, and the one saved on the way out
+	bool resume_load = false;
+	bool resume_loading = false;
+	bool leaving = false; // the pause menu chose to leave: the state is being saved, then the game stops
+	bool leave_saved = false;
+	uint32_t leave_vi = 0;
+	emu::ExitReason leave_reason = emu::ExitReason::BackToList;
 	// FPS counter
 	double fps_t0 = 0;
 	uint64_t fps_tsc0 = 0;
@@ -283,7 +290,14 @@ void CoreState(void*, m64p_core_param param, int value)
 		OrbisLog("[emu] state %s %s", save ? "save" : "load", value ? "done" : "failed");
 		if (save)
 			g.pending_save_slot = -1;
-		if (!value)
+		if (save && g.leaving)
+			g.leave_saved = true;
+		else if (!save && g.resume_loading)
+		{
+			g.resume_loading = false;
+			emu::Osd(value ? "Continuing where you left off" : "Could not continue where you left off: the game starts over");
+		}
+		else if (!value)
 			emu::Osd(save ? "Could not save the state" : "Could not load the state");
 	}
 }
@@ -459,6 +473,22 @@ std::string StatePath(int slot)
 	return OrbisDir("states") + "/" + g.file_base + ".st" + std::to_string(slot);
 }
 
+// The ROM's file name without folder and extension: its states are named after it.
+std::string FileBase(const std::string& path)
+{
+	const size_t slash = path.find_last_of('/');
+	std::string base = path.substr(slash == std::string::npos ? 0 : slash + 1);
+	if (const size_t d = base.find_last_of('.'); d != std::string::npos && d > 0)
+		base.resize(d);
+	return base;
+}
+
+// "Continue where you left off": saved when the player leaves the game from the pause menu.
+std::string ResumePath(const std::string& file_base)
+{
+	return OrbisDir("states") + "/" + file_base + ".resume";
+}
+
 void SetLimiter(bool on)
 {
 	if (g.limiter_set && g.limiter_on == on)
@@ -478,6 +508,31 @@ void StopGame(emu::ExitReason why)
 	CoreDoCommand(M64CMD_STOP, 0, nullptr);
 }
 
+// Leaving the game from the pause menu: with "Continue where you left off" on, its state is saved first (at
+// the next VI; n64ps5_on_vi stops the game once the core says it is written), else it stops now.
+void LeaveGame(emu::ExitReason why)
+{
+	if (g.leaving || g.stopping)
+		return;
+	if (fe::Config().resume)
+	{
+		const std::string path = ResumePath(g.file_base);
+		if (CoreDoCommand(M64CMD_STATE_SAVE, 1, (void*)path.c_str()) == M64ERR_SUCCESS)
+		{
+			OrbisLog("[emu] leaving: saving where the player is -> %s", path.c_str());
+			g.leaving = true;
+			g.leave_saved = false;
+			g.leave_vi = g.vi;
+			g.leave_reason = why;
+			n64ps5_input_block(true);
+			n64ps5_audio_set_mute(true);
+			return;
+		}
+		OrbisLog("[emu] leaving: the core refused to save the state");
+	}
+	StopGame(why);
+}
+
 void OpenPauseMenu()
 {
 	N64_STAGE(Emu, "pause menu");
@@ -495,8 +550,8 @@ void OpenPauseMenu()
 	switch (action)
 	{
 		case fe::PauseAction::Resume: break;
-		case fe::PauseAction::BackToList: StopGame(emu::ExitReason::BackToList); break;
-		case fe::PauseAction::Quit: StopGame(emu::ExitReason::Quit); break;
+		case fe::PauseAction::BackToList: LeaveGame(emu::ExitReason::BackToList); break;
+		case fe::PauseAction::Quit: LeaveGame(emu::ExitReason::Quit); break;
 	}
 	N64_STAGE(Emu, "running");
 }
@@ -544,6 +599,20 @@ extern "C" void n64ps5_on_vi(const n64ps5_frame* frame)
 	g.vi++;
 	if (g.vi == 1)
 		N64_STAGE(Emu, "running");
+	if (g.vi == 1 && g.resume_load)
+	{
+		g.resume_load = false;
+		const std::string path = ResumePath(g.file_base);
+		g.resume_loading = CoreDoCommand(M64CMD_STATE_LOAD, 0, (void*)path.c_str()) == M64ERR_SUCCESS;
+		OrbisLog("[emu] continuing where the player left off <- %s: %s", path.c_str(), g.resume_loading ? "queued" : "refused");
+	}
+	// leaving: the state is written (or the core never said so in 5 s): now the game stops
+	if (g.leaving && !g.stopping && (g.leave_saved || g.vi - g.leave_vi > 300))
+	{
+		if (!g.leave_saved)
+			OrbisLog("[emu] leaving: no word from the core about the state, stopping anyway");
+		StopGame(g.leave_reason);
+	}
 	const bool ff = g.fast_forward.load();
 	SetLimiter(g.pal && !ff);
 
@@ -554,12 +623,13 @@ extern "C" void n64ps5_on_vi(const n64ps5_frame* frame)
 	if (g.block_until_release && raw == 0)
 	{
 		g.block_until_release = false;
-		n64ps5_input_block(false);
+		if (!g.leaving)
+			n64ps5_input_block(false);
 	}
 
 	const uint32_t combo = SCE_PAD_BUTTON_L3 | SCE_PAD_BUTTON_R3;
 	const bool menu = (pressed & SCE_PAD_BUTTON_TOUCH_PAD) || ((raw & combo) == combo && (pressed & combo));
-	if (menu && !g.stopping)
+	if (menu && !g.stopping && !g.leaving)
 	{
 		OpenPauseMenu();
 		g.prev_buttons = ps5input::Pad(0).raw_buttons;
@@ -571,7 +641,7 @@ extern "C" void n64ps5_on_vi(const n64ps5_frame* frame)
 			ps5audio::Queued(), n64ps5_audio_target(),
 			(unsigned long long)ps5audio::Underruns());
 
-	if (frame && !g.stopping && (!ff || (g.vi % 4) == 0))
+	if (frame && !g.stopping && !g.leaving && (!ff || (g.vi % 4) == 0))
 		g_presenter.Submit(frame->pixels, frame->width, frame->height, frame->pitch, !ff && !g.pal);
 
 	// No picture: the game blanked the screen (VI off, e.g. Perfect Dark while it loads). A real N64 shows
@@ -585,7 +655,7 @@ extern "C" void n64ps5_on_vi(const n64ps5_frame* frame)
 				g.blank_vis / (g.pal ? 50.0 : 60.0));
 		g.blank_vis = 0;
 	}
-	else if (++g.blank_vis == kBlankVis && !g.stopping)
+	else if (++g.blank_vis == kBlankVis && !g.stopping && !g.leaving)
 	{
 		static const uint32_t kBlack[320 * 240] = {};
 		g_presenter.Submit(kBlack, 320, 240, 320, !ff && !g.pal);
@@ -665,7 +735,7 @@ void DeinitCore()
 	g.core_ok = false;
 }
 
-ExitReason RunGame(const std::string& path, std::string* error)
+ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 {
 	std::string dummy;
 	if (!error)
@@ -702,10 +772,7 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	CoreDoCommand(M64CMD_ROM_GET_SETTINGS, sizeof(settings), &settings);
 
 	g.rom_path = path;
-	const size_t slash = path.find_last_of('/');
-	g.file_base = path.substr(slash == std::string::npos ? 0 : slash + 1);
-	if (const size_t d = g.file_base.find_last_of('.'); d != std::string::npos && d > 0)
-		g.file_base.resize(d);
+	g.file_base = FileBase(path);
 	g.pal = IsPalCountry(header.Country_code);
 	// the title: as on the shelf (No-Intro name), else the catalog's GoodName, else the file name
 	uint32_t crc = 0;
@@ -723,9 +790,15 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	// the CPU core: the dynarec when the setting asks for it and the console allows executable memory
 	const bool use_dynarec = cfg.dynarec && n64ps5_jit_probe() != 0;
 	m64p_handle core_cfg = nullptr;
+	// overclock: the core counts 2^n times fewer cycles per instruction, so the game gets more of them per frame
+	const int overclock = std::clamp(cfg.overclock, 0, 2);
 	if (ConfigOpenSection("Core", &core_cfg) == M64ERR_SUCCESS && core_cfg)
+	{
 		SetCoreInt(core_cfg, "R4300Emulator", use_dynarec ? 2 : 1);
-	OrbisLog("[emu] CPU: %s", use_dynarec ? "dynamic recompiler" : "cached interpreter");
+		SetCoreInt(core_cfg, "CountPerOpDenomPot", overclock);
+	}
+	OrbisLog("[emu] CPU: %s, overclock %s", use_dynarec ? "dynamic recompiler" : "cached interpreter",
+		overclock == 0 ? "off" : overclock == 1 ? "2x" : "4x");
 	n64ps5_rsp_set_hle(cfg.hle_audio);
 	static const char* const kPaks[] = {"none", "Controller Pak", "Rumble Pak"};
 	OrbisLog("[emu] controller pak: %s", kPaks[cfg.pak < 0 || cfg.pak > 2 ? 1 : cfg.pak]);
@@ -777,6 +850,10 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	g.fast_forward.store(false);
 	g.fps_t0 = 0;
 	g.pending_save_slot = -1;
+	g.resume_load = resume && OrbisIsFile(ResumePath(g.file_base));
+	g.resume_loading = false;
+	g.leaving = false;
+	g.leave_saved = false;
 	g.fps_text[0] = 0;
 	ps5video::FillRect(0, 0, ps5video::kWidth, ps5video::kHeight, ps5video::Rgb(0, 0, 0));
 	ps5video::InvalidateN64();
@@ -797,6 +874,9 @@ ExitReason RunGame(const std::string& path, std::string* error)
 	for (int i = 0; i < ps5input::kMaxPads; i++)
 		ps5input::SetRumble(i, 0, 0);
 	n64ps5_input_block(false);
+	if (g.leaving)
+		n64ps5_audio_set_mute(!fe::Config().audio);
+	g.leaving = false;
 	g.running = false;
 	N64_STAGE(Emu, "idle");
 	if (r != M64ERR_SUCCESS && g.vi == 0)
@@ -805,6 +885,21 @@ ExitReason RunGame(const std::string& path, std::string* error)
 		return ExitReason::Error;
 	}
 	return g.exit;
+}
+
+bool ResumeStateExists(const std::string& rom, std::string* saved_at)
+{
+	struct stat st = {};
+	if (stat(ResumePath(FileBase(rom)).c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+		return false;
+	if (saved_at)
+	{
+		char t[48];
+		const time_t mt = st.st_mtime;
+		strftime(t, sizeof(t), "%b %d, %H:%M", localtime(&mt));
+		*saved_at = t;
+	}
+	return true;
 }
 
 bool GameLoaded()

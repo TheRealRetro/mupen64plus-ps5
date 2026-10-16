@@ -16,8 +16,12 @@ enum class ExitReason
 	Quit, // "quit Mupen64Plus"
 	Error, // the game could not be started (see `error`)
 };
-// Opens the ROM and runs it until the player leaves it (blocks; the pause menu runs inside).
-ExitReason RunGame(const std::string& path, std::string* error);
+// Opens the ROM and runs it until the player leaves it (blocks; the pause menu runs inside). With `resume`, the
+// game continues where the player left it (see ResumeStateExists).
+ExitReason RunGame(const std::string& path, std::string* error, bool resume = false);
+// "Continue where you left off" (Settings): leaving a game from the pause menu saves its state in
+// states/<rom file>.resume. True if `rom` has one; `saved_at` gets when it was written.
+bool ResumeStateExists(const std::string& rom, std::string* saved_at = nullptr);
 
 bool GameLoaded();
 std::string GameName(); // the title shown on the shelf (No-Intro name, ROM header name or file name)

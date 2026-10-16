@@ -61,6 +61,8 @@ void Settings::Load()
 			dynarec = atoi(val) != 0;
 		else if (key == "hle_audio")
 			hle_audio = atoi(val) != 0;
+		else if (key == "overclock")
+			overclock = Clamp(atoi(val), 0, 2);
 		else if (key == "gpu")
 			gpu = atoi(val) != 0;
 		else if (key == "upscale")
@@ -86,6 +88,8 @@ void Settings::Load()
 			game_view = Clamp(atoi(val), 0, 2);
 		else if (key == "state_slot")
 			state_slot = Clamp(atoi(val), 0, 9);
+		else if (key == "resume")
+			resume = atoi(val) != 0;
 		else if (key == "covers_download")
 			covers_download = atoi(val) != 0;
 		else if (key == "updates")
@@ -117,6 +121,7 @@ void Settings::Save() const
 	fprintf(f, "render_threads=%d\n", render_threads);
 	fprintf(f, "dynarec=%d\n", dynarec ? 1 : 0);
 	fprintf(f, "hle_audio=%d\n", hle_audio ? 1 : 0);
+	fprintf(f, "overclock=%d\n", overclock);
 	fprintf(f, "gpu=%d\n", gpu ? 1 : 0);
 	fprintf(f, "upscale=%d\n", upscale);
 	fprintf(f, "gpu_sync=%d\n", gpu_sync ? 1 : 0);
@@ -128,6 +133,7 @@ void Settings::Save() const
 	fprintf(f, "invert_c_stick=%d\n", invert_c_stick);
 	fprintf(f, "game_view=%d\n", game_view);
 	fprintf(f, "state_slot=%d\n", state_slot);
+	fprintf(f, "resume=%d\n", resume ? 1 : 0);
 	fprintf(f, "covers_download=%d\n", covers_download ? 1 : 0);
 	fprintf(f, "updates=%d\n", updates ? 1 : 0);
 	fprintf(f, "last_dir=%s\n", last_dir.c_str());

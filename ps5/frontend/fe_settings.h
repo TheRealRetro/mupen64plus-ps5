@@ -17,6 +17,7 @@ struct Settings
 	// emulation
 	bool dynarec = true; // the x86-64 dynarec when the console gives us executable memory, else the interpreter
 	bool hle_audio = true; // audio tasks done by rsp-hle (fast), else by cxd4 running the game's microcode
+	int overclock = 0; // the N64 CPU's speed: 0 as on the console, 1 twice, 2 four times (CountPerOpDenomPot)
 	bool gpu = true; // the GPU renderer, paraLLEl-RDP (builds with Vulkan only), else angrylion on the CPU
 	int upscale = 4; // the GPU renderer's internal resolution: 1, 2, 4 or 8 times the N64's
 	bool gpu_sync = true; // wait for the GPU wherever the game waits for the RDP (else faster, may glitch)
@@ -30,6 +31,7 @@ struct Settings
 	int invert_c_stick = 0; // the right stick (C buttons), the same way
 	// misc
 	int state_slot = 0; // 0..9
+	bool resume = true; // leaving a game saves where the player was; starting it again offers to continue there
 	int game_view = 0; // the game list: 0 shelf (3D cover flow), 1 grid, 2 list (the touchpad cycles them)
 	bool covers_download = true; // fetch box art from libretro-thumbnails
 	bool updates = true; // offer new GitHub releases at start-up (fe_update.h)

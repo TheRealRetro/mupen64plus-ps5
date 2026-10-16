@@ -56,10 +56,10 @@ void WritePid()
 }
 
 // One game, until the player leaves it. Returns false when the player chose "quit Mupen64Plus".
-bool PlayGame(const std::string& rom)
+bool PlayGame(const std::string& rom, bool resume)
 {
 	std::string error;
-	switch (emu::RunGame(rom, &error))
+	switch (emu::RunGame(rom, &error, resume))
 	{
 		case emu::ExitReason::BackToList: return true;
 		case emu::ExitReason::Quit: return false;
@@ -177,11 +177,12 @@ int Run(int argc, char** argv)
 	std::string rom = (argc > 1 && argv[1] && OrbisIsFile(argv[1])) ? argv[1] : "";
 	for (;;)
 	{
+		bool resume = false;
 		if (rom.empty())
-			rom = fe::Shelf();
+			rom = fe::Shelf(&resume);
 		if (rom.empty())
 			break; // OPTIONS on the shelf
-		const bool again = PlayGame(rom);
+		const bool again = PlayGame(rom, resume);
 		rom.clear();
 		if (!again)
 			break;

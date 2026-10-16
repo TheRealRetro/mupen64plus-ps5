@@ -75,6 +75,13 @@ picture is read back and shown like angrylion's. Its compiled shaders are kept i
 `/data/mupen64plus/cache/parallel-rdp-pipelines.bin`. If Vulkan doesn't work, the app falls back to angrylion,
 which renders on the CPU at the N64's own resolution.
 
+**Shaders shipped with the app.** Every PS5 has the same GPU and runs the same RADV, built into `eboot.bin`, so
+one console's compiled shaders suit the others. `n64/plugins/assets/parallel-rdp-pipelines.bin`, when present,
+is a copy of a console's `cache/parallel-rdp-pipelines.bin` built into `eboot.bin`; at the first start of a new
+version, the app merges it into the player's own cache (`cache/parallel-rdp-pipelines.seed` remembers it), so
+nobody waits for those compiles. A cache made by another driver (its UUID differs) is left out. To refresh it,
+copy the cache from a console that has played many games, after a build that changed RADV or paraLLEl-RDP.
+
 **What the core needs from SDL, libpng and dlopen is replaced:**
 
 - `n64/sdl/` provides threads, mutexes and the clock on pthreads.
@@ -164,12 +171,14 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | Internal resolution * | GPU renderer: 1x (native), 2x, 4x (default), 8x |
 | GPU sync * | GPU renderer: Accurate (default: waits for the GPU wherever the game waits for the RDP) or Fast (may glitch) |
 | CPU core * | Dynarec (default, when the console allows it) or Interpreter (slower; for a game the dynarec gets wrong) |
+| CPU overclock * | Off (default), 2x, 4x: the N64's CPU gets 2 or 4 times the cycles per frame (the core's `CountPerOpDenomPot`), so games that slowed down on the console (GoldenEye, Perfect Dark, Conker) run smoother. A few games misbehave with it |
 | Audio processing * | Fast (HLE, default): rsp-hle does the RSP's audio work; Accurate (LLE): cxd4 runs the game's audio microcode (slower; for a game whose sound HLE gets wrong) |
 | Render threads * | CPU renderer (angrylion) workers: 1–12, default 6 |
 | Controller pak * | Controller Pak (default), Rumble Pak, none |
 | Stick dead zone | 0–30% |
 | Invert left stick | turns the analog stick's X (left/right), Y (up/down) or both round; Off by default |
 | Invert right stick | the same for the right stick's C buttons (Triangle / Circle stay C-up / C-down); Off by default |
+| Continue where you left off | Ask (default): leaving a game from the pause menu saves where you were (`states/<ROM file>.resume`), and starting it again asks "Continue where you left off?" (✕ continue, □ start over, ○ back). Off: neither |
 | Game list view | Shelf (3D, default), Grid or List; the touchpad on the game list switches too |
 | Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (the renderer: angrylion's rasteriser incl. waiting for its threads, or handing commands to the GPU), `vi` (the VI filter, or reading the GPU's picture back), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
 | Sound, Download covers | |
@@ -179,7 +188,7 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 
 - D-pad: choose a game (shelf: Left/Right; grid: all four directions; list: Up/Down)
 - L1/R1: 10 games back or on (shelf), a page up or down (grid, list)
-- Cross: play
+- Cross: play (a game you left from the pause menu asks whether to continue there)
 - Touchpad: the next view (remembered; also Settings → Game list view)
 - Triangle: settings
 - Square: fetch the cover again

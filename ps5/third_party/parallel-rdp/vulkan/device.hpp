@@ -242,6 +242,9 @@ public:
 	size_t get_pipeline_cache_size();
 	bool get_pipeline_cache_data(uint8_t *data, size_t size);
 	bool init_pipeline_cache(const uint8_t *data, size_t size);
+	// Mupen64Plus PS5: adds a saved cache (as get_pipeline_cache_data writes it) to the current one.
+	// False if it was written by another driver or GPU, or is damaged.
+	bool merge_pipeline_cache(const uint8_t *data, size_t size);
 
 	// Frame-pushing interface.
 	void next_frame_context();

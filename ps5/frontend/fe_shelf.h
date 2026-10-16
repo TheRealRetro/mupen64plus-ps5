@@ -17,8 +17,9 @@
 
 namespace fe
 {
-// Returns the game to play, or "" when the player quits.
-std::string Shelf();
+// Returns the game to play, or "" when the player quits. `resume`: the player chose to continue where they
+// left the game (emu::ResumeStateExists).
+std::string Shelf(bool* resume = nullptr);
 // Stops the cover downloads before the payload exits.
 void ShelfShutdown();
 } // namespace fe
