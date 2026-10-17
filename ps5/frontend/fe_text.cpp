@@ -191,19 +191,19 @@ struct Target
 	int w, h, pitch;
 };
 
-void Draw(const Target& t, int x, int y, const char* utf8, int scale, uint32_t color, bool shadow)
+// bold: the text again 1..bold pixels to the right (one weight of Roboto is built in)
+void Draw(const Target& t, int x, int y, const char* utf8, int px, uint32_t color, bool shadow, int bold = 0)
 {
 	Fonts& fonts = F();
 	if (!fonts.ok || !utf8)
 		return;
-	const int px = EmPx(scale);
 	const int baseline = y + int(std::lround(px * 0.80f));
-	const int sh = std::max(1, scale / 2); // shadow offset
-	for (int pass = shadow ? 0 : 1; pass < 2; pass++)
+	const int sh = std::max(1, px / 20); // shadow offset
+	for (int pass = shadow ? 0 : 1; pass < 2 + bold; pass++)
 	{
 		const uint32_t col = pass == 0 ? 0xff000000u : color;
 		const uint32_t strength = pass == 0 ? 150 : 255;
-		const int ox = pass == 0 ? sh : 0, oy = pass == 0 ? sh : 0;
+		const int ox = pass == 0 ? sh : pass - 1, oy = pass == 0 ? sh : 0;
 		float pen = float(x);
 		uint32_t prev = 0;
 		const char* s = utf8;
@@ -239,10 +239,14 @@ void Draw(const Target& t, int x, int y, const char* utf8, int scale, uint32_t c
 
 int TextWidth(const char* utf8, int scale)
 {
+	return TextWidthPx(utf8, EmPx(scale));
+}
+
+int TextWidthPx(const char* utf8, int px)
+{
 	Fonts& fonts = F();
 	if (!fonts.ok || !utf8)
 		return 0;
-	const int px = EmPx(scale);
 	float pen = 0;
 	uint32_t prev = 0;
 	const char* s = utf8;
@@ -263,17 +267,30 @@ void DrawText(int x, int y, const char* utf8, int scale, uint32_t color, bool ou
 	uint32_t* surf = ps5video::Surface();
 	if (!surf)
 		return;
-	Draw(Target{surf, ps5video::kWidth, ps5video::kHeight, ps5video::kWidth}, x, y, utf8, scale, color, outline);
+	Draw(Target{surf, ps5video::kWidth, ps5video::kHeight, ps5video::kWidth}, x, y, utf8, EmPx(scale), color, outline);
+}
+
+void DrawTextPx(int x, int y, const char* utf8, int px, uint32_t color, bool outline, int bold)
+{
+	uint32_t* surf = ps5video::Surface();
+	if (!surf)
+		return;
+	Draw(Target{surf, ps5video::kWidth, ps5video::kHeight, ps5video::kWidth}, x, y, utf8, px, color, outline, bold);
 }
 
 void DrawTextOn(const Canvas& canvas, int x, int y, const char* utf8, int scale, uint32_t color, bool outline)
 {
-	Draw(Target{canvas.px, canvas.w, canvas.h, canvas.pitch}, x, y, utf8, scale, color, outline);
+	Draw(Target{canvas.px, canvas.w, canvas.h, canvas.pitch}, x, y, utf8, EmPx(scale), color, outline);
 }
 
 std::string FitText(const std::string& utf8, int scale, int max_px)
 {
-	if (TextWidth(utf8.c_str(), scale) <= max_px)
+	return FitTextPx(utf8, EmPx(scale), max_px);
+}
+
+std::string FitTextPx(const std::string& utf8, int px, int max_px)
+{
+	if (TextWidthPx(utf8.c_str(), px) <= max_px)
 		return utf8;
 	std::string s = utf8;
 	while (!s.empty())
@@ -283,7 +300,7 @@ std::string FitText(const std::string& utf8, int scale, int max_px)
 			n--;
 		s.resize(n);
 		const std::string t = s + "\xE2\x80\xA6"; // the ellipsis character, as PS5SX2
-		if (TextWidth(t.c_str(), scale) <= max_px)
+		if (TextWidthPx(t.c_str(), px) <= max_px)
 			return t;
 	}
 	return "\xE2\x80\xA6";

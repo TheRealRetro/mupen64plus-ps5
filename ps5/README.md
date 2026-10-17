@@ -156,18 +156,24 @@ it, for every game or, from the pause menu, for one game)
 | right stick | C buttons |
 | Triangle / Circle | C-up / C-down |
 | OPTIONS | Start |
-| **touchpad click** or **L3 + R3** | pause menu |
+| **touchpad click** | pause menu |
+| **R3** (press the right stick) | save the state in the current slot |
+| **L3** (press the left stick) | load the state of the current slot |
 
-**The pause menu** has:
+**The pause menu** (the touchpad) is a panel over the paused game, drawn on the CPU with the anti-aliased shapes
+of `frontend/fe_draw.cpp`; Settings on the game list and the Controller Layout and Cheats pages share its look
+(`fe_menu.cpp`, namespace `pm`). Its footer's buttons work anywhere in it: touchpad resume, Square reset the
+game (after a question), Triangle back to the game list, Cross confirm, Circle back (resume). Its rows:
 
-- resume, save state, load state, and the state slot (0–9);
+- save state and load state (Cross), and the state slot (0–9);
 - **cheats**: the GameShark codes of the core's `data/mupencheat.txt` (about 560 game versions, found by the ROM
   header's CRCs and country; built into `eboot.bin` compressed, `frontend/fe_cheats.cpp`). Each one is off or on,
   or off or one of its choices, with the database's note beside it; the ones left on are on again the next time
   (`cheats/<ROM file>.txt`). Codes that need the GameShark's button are left out;
 - speed (normal or fast forward);
-- every setting below;
-- reset, back to the game list, and quit.
+- every setting below but the game list's (Continue where you left off, Game list view, Download covers, Check
+  for updates: Settings on the game list has them);
+- quit (Cross).
 
 **Settings** (marked `*` when they apply from the next game start):
 
@@ -188,7 +194,7 @@ it, for every game or, from the pause menu, for one game)
 | Stick dead zone | 0–30% |
 | Invert left stick | turns the analog stick's X (left/right), Y (up/down) or both round; Off by default |
 | Invert right stick | the same for the right stick's C buttons (Triangle / Circle stay C-up / C-down); Off by default |
-| Controller layout | what each DualSense control presses on the N64 pad: Cross, Circle, Square, Triangle, L1, R1, L2, R2 (separately), L3, R3, OPTIONS, the D-pad and the right stick's four directions, each set to an N64 button or nothing (the left stick stays the analog stick). From the game list it is every game's layout (in `mupen64plus-ps5.ini`); from the pause menu, the running game's own (`layouts/<ROM file>.txt`, gone again when it matches every game's) |
+| Controller layout | what each DualSense control presses on the N64 pad: Cross, Circle, Square, Triangle, L1, R1, L2, R2 (separately), OPTIONS, the D-pad and the right stick's four directions, each set to an N64 button or nothing (the left stick stays the analog stick). From the game list it is every game's layout (in `mupen64plus-ps5.ini`); from the pause menu, the running game's own (`layouts/<ROM file>.txt`, gone again when it matches every game's) |
 | Continue where you left off | Ask (default): leaving a game from the pause menu saves where you were (`states/<ROM file>.resume`), and starting it again asks "Continue where you left off?" (✕ continue, □ start over, ○ back). Off: neither |
 | Game list view | Shelf (3D, default), Grid or List; the touchpad on the game list switches too |
 | Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (the renderer: angrylion's rasteriser incl. waiting for its threads, or handing commands to the GPU), `vi` (the VI filter, or reading the GPU's picture back), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |

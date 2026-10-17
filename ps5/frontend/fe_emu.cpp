@@ -703,12 +703,19 @@ extern "C" void n64ps5_on_vi(const n64ps5_frame* frame)
 			n64ps5_input_block(false);
 	}
 
-	const uint32_t combo = SCE_PAD_BUTTON_L3 | SCE_PAD_BUTTON_R3;
-	const bool menu = (pressed & SCE_PAD_BUTTON_TOUCH_PAD) || ((raw & combo) == combo && (pressed & combo));
-	if (menu && !g.stopping && !g.leaving)
+	// the touchpad opens the pause menu; R3 (pressed) saves to the state slot, L3 loads it
+	if (!g.stopping && !g.leaving)
 	{
-		OpenPauseMenu();
-		g.prev_buttons = ps5input::Pad(0).raw_buttons;
+		const int slot = fe::Config().state_slot;
+		if (pressed & SCE_PAD_BUTTON_TOUCH_PAD)
+		{
+			OpenPauseMenu();
+			g.prev_buttons = ps5input::Pad(0).raw_buttons;
+		}
+		else if (pressed & SCE_PAD_BUTTON_R3)
+			emu::Osd(emu::SaveState(slot) ? "Saved in slot %d" : "Could not save in slot %d", slot);
+		else if (pressed & SCE_PAD_BUTTON_L3)
+			emu::Osd(emu::StateExists(slot) && emu::LoadState(slot) ? "Loaded slot %d" : "Slot %d is empty", slot);
 	}
 
 	UpdateFps();
@@ -1062,6 +1069,9 @@ void ApplySettings()
 	n64ps5_input_options in = {cfg.deadzone, 80, cfg.pak, cfg.invert_stick, cfg.invert_c_stick, {}};
 	const fe::Layout& layout = g.game_layout ? g.layout : cfg.layout;
 	memcpy(in.layout, layout.to, sizeof(in.layout));
+	// L3 and R3 load and save states (n64ps5_on_vi): the game doesn't get them
+	in.layout[N64PS5_PAD_L3] = N64PS5_N64_NONE;
+	in.layout[N64PS5_PAD_R3] = N64PS5_N64_NONE;
 	n64ps5_input_set_options(&in);
 	ps5video::InvalidateN64();
 }

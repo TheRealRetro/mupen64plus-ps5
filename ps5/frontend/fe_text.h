@@ -30,6 +30,12 @@ void DrawTextOn(const Canvas& canvas, int x, int y, const char* utf8, int scale,
 // Cuts the string so it fits max_px (adds "...").
 std::string FitText(const std::string& utf8, int scale, int max_px);
 
+// The same with the line height in pixels (the em; the pause menu's sizes), and a bold made of the text drawn
+// again `bold` pixels further right.
+int TextWidthPx(const char* utf8, int px);
+void DrawTextPx(int x, int y, const char* utf8, int px, uint32_t color, bool outline = false, int bold = 0);
+std::string FitTextPx(const std::string& utf8, int px, int max_px);
+
 // PromptFont's controller symbols (the same code points as PS5SX2's fe_text.h).
 namespace icon
 {
