@@ -52,20 +52,73 @@ void n64ps5_rsp_set_hle(bool on);
 
 // ---- audio (plugins/audio_ps5.cpp) ---------------------------------------------------------------------
 void n64ps5_audio_set_mute(bool mute);
+// Settings "Volume": the game's sound scaled to 0..100 percent.
+void n64ps5_audio_set_volume(int percent);
 // Fast forward: the audio plugin drops what doesn't fit instead of slowing the game down.
 void n64ps5_audio_set_fast_forward(bool on);
 int n64ps5_audio_game_rate(void); // the game's current output rate in Hz (0 before it sets one)
 int n64ps5_audio_target(void); // the AudioOut ring level the rate control aims at (48 kHz frames)
 
 // ---- input (plugins/input_ps5.cpp) ---------------------------------------------------------------------
+// The controller layout (Settings / pause menu "Controller layout"): for each DualSense control, the N64
+// button it presses. Several controls may press the same one (L2 and R2 are both Z by default). The left
+// stick is always the N64's analog stick.
+enum
+{
+	N64PS5_PAD_CROSS,
+	N64PS5_PAD_CIRCLE,
+	N64PS5_PAD_SQUARE,
+	N64PS5_PAD_TRIANGLE,
+	N64PS5_PAD_L1,
+	N64PS5_PAD_R1,
+	N64PS5_PAD_L2,
+	N64PS5_PAD_R2,
+	N64PS5_PAD_L3,
+	N64PS5_PAD_R3,
+	N64PS5_PAD_OPTIONS,
+	N64PS5_PAD_UP,
+	N64PS5_PAD_DOWN,
+	N64PS5_PAD_LEFT,
+	N64PS5_PAD_RIGHT,
+	N64PS5_PAD_RS_UP, // the right stick tilted (half way)
+	N64PS5_PAD_RS_DOWN,
+	N64PS5_PAD_RS_LEFT,
+	N64PS5_PAD_RS_RIGHT,
+	N64PS5_PAD_COUNT
+};
+enum
+{
+	N64PS5_N64_NONE,
+	N64PS5_N64_A,
+	N64PS5_N64_B,
+	N64PS5_N64_Z,
+	N64PS5_N64_L,
+	N64PS5_N64_R,
+	N64PS5_N64_START,
+	N64PS5_N64_C_UP,
+	N64PS5_N64_C_DOWN,
+	N64PS5_N64_C_LEFT,
+	N64PS5_N64_C_RIGHT,
+	N64PS5_N64_D_UP,
+	N64PS5_N64_D_DOWN,
+	N64PS5_N64_D_LEFT,
+	N64PS5_N64_D_RIGHT,
+	N64PS5_N64_COUNT
+};
+
 typedef struct
 {
 	int deadzone; // percent of the stick's travel ignored around the centre (0..30)
 	int range; // N64 stick range at full tilt (the real stick reaches about 80)
 	int pak; // 0 none, 1 Controller Pak (memory), 2 Rumble Pak
 	int invert; // the analog stick's (left stick's) axes turned round: bit 0 X, bit 1 Y
-	int invert_c; // the C buttons' right stick turned round: bit 0 X (C-left/right), bit 1 Y (C-up/down)
+	int invert_c; // the right stick turned round: bit 0 X (left/right), bit 1 Y (up/down)
+	unsigned char layout[N64PS5_PAD_COUNT]; // N64PS5_N64_* for each N64PS5_PAD_*
 } n64ps5_input_options;
+
+// The layout of the N64 pad by position: Cross A, Square B, L2 / R2 Z, L1 / R1 L / R, OPTIONS Start, D-pad
+// D-pad, right stick and Triangle / Circle the C buttons.
+void n64ps5_input_default_layout(unsigned char layout[N64PS5_PAD_COUNT]);
 
 void n64ps5_input_set_options(const n64ps5_input_options* opt);
 // While the frontend uses the pad itself (a hotkey held, the pause menu just closed), the game sees no

@@ -143,7 +143,8 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 
 ## Controls
 
-**In a game** (buttons by position, as on the N64 pad)
+**In a game** (the default layout: buttons by position, as on the N64 pad; Settings → Controller layout changes
+it, for every game or, from the pause menu, for one game)
 
 | PS5 | N64 |
 |---|---|
@@ -183,9 +184,11 @@ Title ID `PPSA99064` and the folders below don't overlap with Snes9x PS5 (PPSA99
 | Stick dead zone | 0–30% |
 | Invert left stick | turns the analog stick's X (left/right), Y (up/down) or both round; Off by default |
 | Invert right stick | the same for the right stick's C buttons (Triangle / Circle stay C-up / C-down); Off by default |
+| Controller layout | what each DualSense control presses on the N64 pad: Cross, Circle, Square, Triangle, L1, R1, L2, R2 (separately), L3, R3, OPTIONS, the D-pad and the right stick's four directions, each set to an N64 button or nothing (the left stick stays the analog stick). From the game list it is every game's layout (in `mupen64plus-ps5.ini`); from the pause menu, the running game's own (`layouts/<ROM file>.txt`, gone again when it matches every game's) |
 | Continue where you left off | Ask (default): leaving a game from the pause menu saves where you were (`states/<ROM file>.resume`), and starting it again asks "Continue where you left off?" (✕ continue, □ start over, ○ back). Off: neither |
 | Game list view | Shelf (3D, default), Grid or List; the touchpad on the game list switches too |
 | Show FPS | the speed (`VI/s`, 100% = full speed) and, below it, where the emulation thread's time goes: `cpu` (VR4300 interpreter), `rsp` (rsp-hle + cxd4), `rdp` (the renderer: angrylion's rasteriser incl. waiting for its threads, or handing commands to the GPU), `vi` (the VI filter, or reading the GPU's picture back), `idle` (waiting for the TV: spare time). Also logged every 10 s in `boot.log` |
+| Volume | the game's sound, 0–100% (default 100%) |
 | Sound, Download covers | |
 | Check for updates | ask at start-up when a newer GitHub release exists (see [Updates](#updates)) |
 

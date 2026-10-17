@@ -1,13 +1,15 @@
 // Mupen64Plus PS5: the input plugin, DualSense / DualShock through libScePad (ProsperoInput.h).
 //
 // The frontend polls the pads once per video interrupt (fe_emu.cpp); GetKeys turns that state into the
-// N64 controller's buttons and stick. Mapping (by position, as on the N64 pad):
+// N64 controller's buttons and stick. The left stick is the analog stick; every other control presses the
+// N64 button the controller layout gives it (n64ps5_input_options.layout, per game). The default layout, by
+// position as on the N64 pad:
 //
 //   left stick  -> analog stick         D-pad      -> D-pad
 //   Cross       -> A                    Square     -> B
 //   L2 or R2    -> Z                    L1 / R1    -> L / R
 //   right stick -> C buttons            Triangle   -> C-up, Circle -> C-down
-//   OPTIONS     -> Start
+//   OPTIONS     -> Start                L3, R3     -> nothing
 //
 // Rumble: the core sends Rumble Pak writes through ControllerCommand; they drive the controller's motors.
 //
@@ -33,7 +35,8 @@ constexpr int kNumControllers = 4;
 
 bool g_init = false;
 CONTROL* g_controls = nullptr;
-n64ps5_input_options g_opt = {12, 80, 1, 0, 0};
+n64ps5_input_options g_opt = {12, 80, 1, 0, 0, {}};
+bool g_opt_set = false;
 std::atomic<bool> g_block{false};
 
 // One stick axis (0..255, centre 128) -> -range..range, with a dead zone and a linear ramp after it.
@@ -95,6 +98,8 @@ int PakPlugin()
 
 void InitiateControllers(CONTROL_INFO info)
 {
+	if (!g_opt_set) // before the frontend's first options: the default layout
+		n64ps5_input_default_layout(g_opt.layout);
 	g_controls = info.Controls;
 	if (!g_controls)
 		return;
@@ -122,25 +127,50 @@ void GetKeys(int control, BUTTONS* keys)
 		return;
 	const uint32_t b = p.raw_buttons; // the D-pad only (the stick is the analog stick here)
 
-	keys->R_DPAD = (b & SCE_PAD_BUTTON_RIGHT) != 0;
-	keys->L_DPAD = (b & SCE_PAD_BUTTON_LEFT) != 0;
-	keys->D_DPAD = (b & SCE_PAD_BUTTON_DOWN) != 0;
-	keys->U_DPAD = (b & SCE_PAD_BUTTON_UP) != 0;
-	keys->START_BUTTON = (b & SCE_PAD_BUTTON_OPTIONS) != 0;
-	keys->Z_TRIG = (b & (SCE_PAD_BUTTON_L2 | SCE_PAD_BUTTON_R2)) != 0;
-	keys->B_BUTTON = (b & SCE_PAD_BUTTON_SQUARE) != 0;
-	keys->A_BUTTON = (b & SCE_PAD_BUTTON_CROSS) != 0;
-	keys->L_TRIG = (b & SCE_PAD_BUTTON_L1) != 0;
-	keys->R_TRIG = (b & SCE_PAD_BUTTON_R1) != 0;
+	// what each DualSense control is doing; the right stick counts at half tilt. Settings "Invert left stick"
+	// and "Invert right stick" (GitHub issue #3) turn the sticks' axes round.
+	bool on[N64PS5_PAD_COUNT] = {};
+	on[N64PS5_PAD_CROSS] = (b & SCE_PAD_BUTTON_CROSS) != 0;
+	on[N64PS5_PAD_CIRCLE] = (b & SCE_PAD_BUTTON_CIRCLE) != 0;
+	on[N64PS5_PAD_SQUARE] = (b & SCE_PAD_BUTTON_SQUARE) != 0;
+	on[N64PS5_PAD_TRIANGLE] = (b & SCE_PAD_BUTTON_TRIANGLE) != 0;
+	on[N64PS5_PAD_L1] = (b & SCE_PAD_BUTTON_L1) != 0;
+	on[N64PS5_PAD_R1] = (b & SCE_PAD_BUTTON_R1) != 0;
+	on[N64PS5_PAD_L2] = (b & SCE_PAD_BUTTON_L2) != 0;
+	on[N64PS5_PAD_R2] = (b & SCE_PAD_BUTTON_R2) != 0;
+	on[N64PS5_PAD_L3] = (b & SCE_PAD_BUTTON_L3) != 0;
+	on[N64PS5_PAD_R3] = (b & SCE_PAD_BUTTON_R3) != 0;
+	on[N64PS5_PAD_OPTIONS] = (b & SCE_PAD_BUTTON_OPTIONS) != 0;
+	on[N64PS5_PAD_UP] = (b & SCE_PAD_BUTTON_UP) != 0;
+	on[N64PS5_PAD_DOWN] = (b & SCE_PAD_BUTTON_DOWN) != 0;
+	on[N64PS5_PAD_LEFT] = (b & SCE_PAD_BUTTON_LEFT) != 0;
+	on[N64PS5_PAD_RIGHT] = (b & SCE_PAD_BUTTON_RIGHT) != 0;
+	const bool rs_right = p.rx > 192, rs_left = p.rx < 64, rs_down = p.ry > 192, rs_up = p.ry < 64;
+	const bool rs_flip_x = (g_opt.invert_c & 1) != 0, rs_flip_y = (g_opt.invert_c & 2) != 0;
+	on[N64PS5_PAD_RS_RIGHT] = rs_flip_x ? rs_left : rs_right;
+	on[N64PS5_PAD_RS_LEFT] = rs_flip_x ? rs_right : rs_left;
+	on[N64PS5_PAD_RS_DOWN] = rs_flip_y ? rs_up : rs_down;
+	on[N64PS5_PAD_RS_UP] = rs_flip_y ? rs_down : rs_up;
 
-	// C buttons: the right stick (half tilt), plus Triangle / Circle. Settings "Invert left stick" and
-	// "Invert right stick" (GitHub issue #3) turn the sticks' axes round; Triangle / Circle stay as they are.
-	const bool c_right = p.rx > 192, c_left = p.rx < 64, c_down = p.ry > 192, c_up = p.ry < 64;
-	const bool c_flip_x = (g_opt.invert_c & 1) != 0, c_flip_y = (g_opt.invert_c & 2) != 0;
-	keys->R_CBUTTON = c_flip_x ? c_left : c_right;
-	keys->L_CBUTTON = c_flip_x ? c_right : c_left;
-	keys->D_CBUTTON = (c_flip_y ? c_up : c_down) || (b & SCE_PAD_BUTTON_CIRCLE) != 0;
-	keys->U_CBUTTON = (c_flip_y ? c_down : c_up) || (b & SCE_PAD_BUTTON_TRIANGLE) != 0;
+	// and what they press on the N64 pad
+	bool n64[N64PS5_N64_COUNT] = {};
+	for (int i = 0; i < N64PS5_PAD_COUNT; i++)
+		if (on[i] && g_opt.layout[i] < N64PS5_N64_COUNT)
+			n64[g_opt.layout[i]] = true;
+	keys->A_BUTTON = n64[N64PS5_N64_A];
+	keys->B_BUTTON = n64[N64PS5_N64_B];
+	keys->Z_TRIG = n64[N64PS5_N64_Z];
+	keys->L_TRIG = n64[N64PS5_N64_L];
+	keys->R_TRIG = n64[N64PS5_N64_R];
+	keys->START_BUTTON = n64[N64PS5_N64_START];
+	keys->U_CBUTTON = n64[N64PS5_N64_C_UP];
+	keys->D_CBUTTON = n64[N64PS5_N64_C_DOWN];
+	keys->L_CBUTTON = n64[N64PS5_N64_C_LEFT];
+	keys->R_CBUTTON = n64[N64PS5_N64_C_RIGHT];
+	keys->U_DPAD = n64[N64PS5_N64_D_UP];
+	keys->D_DPAD = n64[N64PS5_N64_D_DOWN];
+	keys->L_DPAD = n64[N64PS5_N64_D_LEFT];
+	keys->R_DPAD = n64[N64PS5_N64_D_RIGHT];
 
 	const int x = Axis(p.lx, g_opt.deadzone, g_opt.range);
 	const int y = -Axis(p.ly, g_opt.deadzone, g_opt.range); // the N64's Y grows upwards
@@ -214,7 +244,37 @@ extern "C" const m64ps5_library m64ps5_input_lib = {"ps5-dualsense", kSymbols};
 extern "C" void n64ps5_input_set_options(const n64ps5_input_options* opt)
 {
 	if (opt)
+	{
 		g_opt = *opt;
+		g_opt_set = true;
+	}
+}
+
+extern "C" void n64ps5_input_default_layout(unsigned char layout[N64PS5_PAD_COUNT])
+{
+	static const unsigned char kDefault[N64PS5_PAD_COUNT] = {
+		N64PS5_N64_A, // Cross
+		N64PS5_N64_C_DOWN, // Circle
+		N64PS5_N64_B, // Square
+		N64PS5_N64_C_UP, // Triangle
+		N64PS5_N64_L, // L1
+		N64PS5_N64_R, // R1
+		N64PS5_N64_Z, // L2
+		N64PS5_N64_Z, // R2
+		N64PS5_N64_NONE, // L3
+		N64PS5_N64_NONE, // R3
+		N64PS5_N64_START, // OPTIONS
+		N64PS5_N64_D_UP,
+		N64PS5_N64_D_DOWN,
+		N64PS5_N64_D_LEFT,
+		N64PS5_N64_D_RIGHT,
+		N64PS5_N64_C_UP, // right stick
+		N64PS5_N64_C_DOWN,
+		N64PS5_N64_C_LEFT,
+		N64PS5_N64_C_RIGHT,
+	};
+	for (int i = 0; i < N64PS5_PAD_COUNT; i++)
+		layout[i] = kDefault[i];
 }
 
 extern "C" void n64ps5_input_block(bool block)

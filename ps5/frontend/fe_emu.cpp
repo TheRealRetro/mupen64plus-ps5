@@ -221,6 +221,10 @@ struct State
 	uint32_t prev_buttons = 0;
 	bool block_until_release = false;
 	int pending_save_slot = -1;
+	// the controller layout while a game is loaded (from RunGame on): its own or Settings'
+	bool game_layout = false;
+	bool own_layout = false;
+	fe::Layout layout;
 	// "continue where you left off": the state loaded at the first VI, and the one saved on the way out
 	bool resume_load = false;
 	bool resume_loading = false;
@@ -737,6 +741,7 @@ void DeinitCore()
 
 ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 {
+	g.game_layout = false; // Settings' until this game's is known
 	std::string dummy;
 	if (!error)
 		error = &dummy;
@@ -773,6 +778,10 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 
 	g.rom_path = path;
 	g.file_base = FileBase(path);
+	g.own_layout = fe::LoadGameLayout(g.file_base, g.layout);
+	if (!g.own_layout)
+		g.layout = fe::Config().layout;
+	g.game_layout = true;
 	g.pal = IsPalCountry(header.Country_code);
 	// the title: as on the shelf (No-Intro name), else the catalog's GoodName, else the file name
 	uint32_t crc = 0;
@@ -802,6 +811,8 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 	n64ps5_rsp_set_hle(cfg.hle_audio);
 	static const char* const kPaks[] = {"none", "Controller Pak", "Rumble Pak"};
 	OrbisLog("[emu] controller pak: %s", kPaks[cfg.pak < 0 || cfg.pak > 2 ? 1 : cfg.pak]);
+	OrbisLog("[emu] controller layout: %s%s", g.own_layout ? "this game's own " : "",
+		g.layout == fe::Layout() ? "(the N64 pad's)" : fe::LayoutToText(g.layout).c_str());
 	LogSaves("at start", settings.goodname, settings.MD5);
 	const n64ps5_gfx_options gfx = {cfg.vi_filter ? 0 : 1, cfg.hide_overscan, cfg.render_threads, cfg.dp_compat,
 		cfg.upscale, cfg.gpu_sync};
@@ -878,6 +889,7 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 		n64ps5_audio_set_mute(!fe::Config().audio);
 	g.leaving = false;
 	g.running = false;
+	g.game_layout = false;
 	N64_STAGE(Emu, "idle");
 	if (r != M64ERR_SUCCESS && g.vi == 0)
 	{
@@ -907,6 +919,26 @@ bool GameLoaded()
 	return g.running;
 }
 
+fe::Layout GameLayout()
+{
+	return g.game_layout ? g.layout : fe::Config().layout;
+}
+
+bool GameHasOwnLayout()
+{
+	return g.game_layout && g.own_layout;
+}
+
+void SetGameLayout(const fe::Layout& layout)
+{
+	if (!g.game_layout)
+		return;
+	g.layout = layout;
+	g.own_layout = layout != fe::Config().layout;
+	fe::SaveGameLayout(g.file_base, g.own_layout ? &layout : nullptr);
+	ApplySettings();
+}
+
 std::string GameName()
 {
 	return g.title;
@@ -916,8 +948,11 @@ void ApplySettings()
 {
 	const fe::Settings& cfg = fe::Config();
 	n64ps5_audio_set_mute(!cfg.audio);
+	n64ps5_audio_set_volume(cfg.volume);
 	n64ps5_audio_set_fast_forward(g.fast_forward.load());
-	const n64ps5_input_options in = {cfg.deadzone, 80, cfg.pak, cfg.invert_stick, cfg.invert_c_stick};
+	n64ps5_input_options in = {cfg.deadzone, 80, cfg.pak, cfg.invert_stick, cfg.invert_c_stick, {}};
+	const fe::Layout& layout = g.game_layout ? g.layout : cfg.layout;
+	memcpy(in.layout, layout.to, sizeof(in.layout));
 	n64ps5_input_set_options(&in);
 	ps5video::InvalidateN64();
 }

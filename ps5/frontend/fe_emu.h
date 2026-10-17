@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe_settings.h"
+
 #include <string>
 
 namespace emu
@@ -24,6 +26,11 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume = fa
 bool ResumeStateExists(const std::string& rom, std::string* saved_at = nullptr);
 
 bool GameLoaded();
+// The running game's controller layout: its own (fe::LoadGameLayout) or else the one of Settings. Setting it
+// (pause menu) gives the game its own layout file, unless it is the same as Settings' again.
+fe::Layout GameLayout();
+bool GameHasOwnLayout();
+void SetGameLayout(const fe::Layout& layout);
 std::string GameName(); // the title shown on the shelf (No-Intro name, ROM header name or file name)
 
 // Settings from fe::Config() that apply while a game runs (aspect, smoothing, FPS, sound, dead zone).

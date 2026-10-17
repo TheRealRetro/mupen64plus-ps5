@@ -48,7 +48,7 @@ m64p_system_type g_system = SYSTEM_NTSC;
 std::atomic<bool> g_mute{false};
 std::atomic<bool> g_fast_forward{false};
 std::atomic<int> g_rate{0};
-int g_volume = 100;
+std::atomic<int> g_volume{100};
 
 // resampler state
 double g_pos = 0.0; // position between g_prev and the next input sample
@@ -211,7 +211,7 @@ void AiLenChanged()
 		g_out.resize(size_t(max_out) * 2);
 	int16_t* out = g_out.data();
 	int n = 0;
-	const int vol = g_volume;
+	const int vol = g_volume.load(std::memory_order_relaxed);
 	// Linear interpolation between g_prev (position 0) and each next sample (position 1).
 	for (int i = 0; i < in_frames; i++)
 	{
@@ -262,7 +262,7 @@ void VolumeDown()
 
 int VolumeGetLevel()
 {
-	return g_mute.load() ? 0 : g_volume;
+	return g_mute.load() ? 0 : g_volume.load();
 }
 
 void VolumeSetLevel(int level)
@@ -276,7 +276,7 @@ const char* VolumeGetString()
 	if (g_mute.load())
 		snprintf(text, sizeof(text), "Mute");
 	else
-		snprintf(text, sizeof(text), "%d%%", g_volume);
+		snprintf(text, sizeof(text), "%d%%", g_volume.load());
 	return text;
 }
 
@@ -307,6 +307,11 @@ extern "C" const m64ps5_library m64ps5_audio_lib = {"ps5-audioout", kSymbols};
 extern "C" void n64ps5_audio_set_mute(bool mute)
 {
 	g_mute.store(mute);
+}
+
+extern "C" void n64ps5_audio_set_volume(int percent)
+{
+	g_volume.store(percent < 0 ? 0 : percent > 100 ? 100 : percent);
 }
 
 extern "C" void n64ps5_audio_set_fast_forward(bool on)

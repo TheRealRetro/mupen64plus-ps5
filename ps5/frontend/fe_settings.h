@@ -2,10 +2,29 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "n64_bridge.h"
+
 #include <string>
 
 namespace fe
 {
+// The controller layout: for each DualSense control (N64PS5_PAD_*), the N64 button it presses (N64PS5_N64_*).
+// The default one is the N64 pad's layout by position (n64ps5_input_default_layout).
+struct Layout
+{
+	unsigned char to[N64PS5_PAD_COUNT];
+	Layout();
+	bool operator==(const Layout& o) const;
+	bool operator!=(const Layout& o) const { return !(*this == o); }
+};
+// "cross=a,circle=c_down,..."; names it doesn't know keep their default
+std::string LayoutToText(const Layout& layout);
+Layout LayoutFromText(const std::string& text);
+// A game's own layout (pause menu): <root>/layouts/<ROM file name>.txt, by the ROM's file name like its states.
+bool LoadGameLayout(const std::string& file_base, Layout& out);
+// With nullptr the file goes and the game follows the layout of Settings.
+void SaveGameLayout(const std::string& file_base, const Layout* layout);
+
 struct Settings
 {
 	// picture
@@ -24,11 +43,13 @@ struct Settings
 	int render_threads = 6; // angrylion workers (1 = single-threaded)
 	int dp_compat = 1; // angrylion sync points between its workers: 0 fewest (fastest), 1, 2 most (safest)
 	bool audio = true;
+	int volume = 100; // the game's sound, 0..100 %
 	// controller
 	int pak = 1; // 0 none, 1 Controller Pak, 2 Rumble Pak
 	int deadzone = 12; // % of the stick's travel
 	int invert_stick = 0; // the left (analog) stick's axes turned round: 0 off, 1 X, 2 Y, 3 X and Y
 	int invert_c_stick = 0; // the right stick (C buttons), the same way
+	Layout layout; // every game's, unless it has its own (LoadGameLayout)
 	// misc
 	int state_slot = 0; // 0..9
 	bool resume = true; // leaving a game saves where the player was; starting it again offers to continue there

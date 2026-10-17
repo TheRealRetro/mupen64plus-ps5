@@ -259,6 +259,7 @@ enum SettingRow
 	S_OVERSCAN,
 	S_FPS,
 	S_AUDIO,
+	S_VOLUME,
 #ifdef N64PS5_VULKAN
 	S_RENDERER,
 	S_UPSCALE,
@@ -272,6 +273,7 @@ enum SettingRow
 	S_DEADZONE,
 	S_INVERT,
 	S_INVERT_C,
+	S_LAYOUT,
 	S_RESUME,
 	S_VIEW,
 	S_COVERS,
@@ -290,6 +292,7 @@ std::string SettingLabel(int s)
 		case S_OVERSCAN: return "Hide overscan *";
 		case S_FPS: return "Show FPS";
 		case S_AUDIO: return "Sound";
+		case S_VOLUME: return "Volume";
 #ifdef N64PS5_VULKAN
 		case S_RENDERER: return "Renderer *";
 		case S_UPSCALE: return "Internal resolution *";
@@ -303,6 +306,7 @@ std::string SettingLabel(int s)
 		case S_DEADZONE: return "Stick dead zone";
 		case S_INVERT: return "Invert left stick";
 		case S_INVERT_C: return "Invert right stick";
+		case S_LAYOUT: return "Controller layout";
 		case S_RESUME: return "Continue where you left off";
 		case S_VIEW: return "Game list view";
 		case S_COVERS: return "Download covers";
@@ -333,6 +337,7 @@ std::string SettingValue(int s)
 		case S_OVERSCAN: return YesNo(c.hide_overscan);
 		case S_FPS: return YesNo(c.show_fps);
 		case S_AUDIO: return YesNo(c.audio);
+		case S_VOLUME: snprintf(buf, sizeof(buf), "%d%%", c.volume); return buf;
 #ifdef N64PS5_VULKAN
 		case S_RENDERER: return c.gpu ? "GPU (paraLLEl-RDP)" : "CPU (angrylion)";
 		case S_UPSCALE:
@@ -358,6 +363,10 @@ std::string SettingValue(int s)
 			static const char* const kInvert[] = {"Off", "X (left/right)", "Y (up/down)", "X and Y"};
 			return kInvert[(s == S_INVERT ? c.invert_stick : c.invert_c_stick) & 3];
 		}
+		case S_LAYOUT:
+			if (!emu::GameLoaded())
+				return c.layout == Layout() ? "N64 pad (edit)" : "Your own (edit)";
+			return emu::GameHasOwnLayout() ? "This game's own" : "Same as all games";
 		case S_RESUME: return c.resume ? "Ask" : "Off";
 		case S_VIEW:
 		{
@@ -367,6 +376,112 @@ std::string SettingValue(int s)
 		case S_COVERS: return YesNo(c.covers_download);
 		case S_UPDATES: return YesNo(c.updates);
 		default: return "";
+	}
+}
+
+// ---- the controller layout ------------------------------------------------------------------------------
+std::string PadLabel(int pad)
+{
+	switch (pad)
+	{
+		case N64PS5_PAD_CROSS: return std::string(icon::Cross) + " Cross";
+		case N64PS5_PAD_CIRCLE: return std::string(icon::Circle) + " Circle";
+		case N64PS5_PAD_SQUARE: return std::string(icon::Square) + " Square";
+		case N64PS5_PAD_TRIANGLE: return std::string(icon::Triangle) + " Triangle";
+		case N64PS5_PAD_L1: return icon::L1;
+		case N64PS5_PAD_R1: return icon::R1;
+		case N64PS5_PAD_L2: return icon::L2;
+		case N64PS5_PAD_R2: return icon::R2;
+		case N64PS5_PAD_L3: return std::string(icon::L3) + " (press the left stick)";
+		case N64PS5_PAD_R3: return std::string(icon::R3) + " (press the right stick)";
+		case N64PS5_PAD_OPTIONS: return std::string(icon::Options) + " OPTIONS";
+		case N64PS5_PAD_UP: return std::string(icon::DpadUpDown) + " D-pad up";
+		case N64PS5_PAD_DOWN: return std::string(icon::DpadUpDown) + " D-pad down";
+		case N64PS5_PAD_LEFT: return std::string(icon::DpadLeftRight) + " D-pad left";
+		case N64PS5_PAD_RIGHT: return std::string(icon::DpadLeftRight) + " D-pad right";
+		case N64PS5_PAD_RS_UP: return "Right stick up";
+		case N64PS5_PAD_RS_DOWN: return "Right stick down";
+		case N64PS5_PAD_RS_LEFT: return "Right stick left";
+		case N64PS5_PAD_RS_RIGHT: return "Right stick right";
+		default: return "";
+	}
+}
+
+const char* N64Label(int n64)
+{
+	static const char* const kNames[N64PS5_N64_COUNT] = {"Nothing", "A", "B", "Z", "L", "R", "Start", "C-up", "C-down",
+		"C-left", "C-right", "D-pad up", "D-pad down", "D-pad left", "D-pad right"};
+	return n64 >= 0 && n64 < N64PS5_N64_COUNT ? kNames[n64] : "";
+}
+
+// Until Cross, Circle and OPTIONS are up: the menu this one returns to must not take them as its own.
+void WaitForRelease()
+{
+	const uint32_t keys = SCE_PAD_BUTTON_CROSS | SCE_PAD_BUTTON_CIRCLE | SCE_PAD_BUTTON_OPTIONS;
+	for (int i = 0; i < 120; i++)
+	{
+		ps5input::Poll();
+		if (!(ps5input::Pad(0).buttons & keys))
+			return;
+		Present();
+	}
+}
+
+// What each DualSense control presses on the N64 pad. From Settings (the game list) it is every game's layout;
+// from the pause menu, the running game's own (kept with the game; the same as every game's until changed).
+void LayoutMenu()
+{
+	Settings& cfg = Config();
+	const bool in_game = emu::GameLoaded();
+	Layout layout = in_game ? emu::GameLayout() : cfg.layout;
+	NavReader nav;
+	int sel = 0;
+	const int kReset = N64PS5_PAD_COUNT, kBack = N64PS5_PAD_COUNT + 1, kCount = N64PS5_PAD_COUNT + 2;
+	for (;;)
+	{
+		std::vector<Row> rows;
+		for (int i = 0; i < N64PS5_PAD_COUNT; i++)
+			rows.push_back({PadLabel(i), N64Label(layout.to[i])});
+		rows.push_back({in_game ? "Use the layout of all games (Settings)" : "Back to the N64 pad's layout", ""});
+		rows.push_back({"Back", ""});
+		const std::string help = std::string(icon::Cross) + " " + icon::DpadLeftRight + " Change     " + icon::Circle + " Back";
+		if (in_game)
+		{
+			ps5video::FillRect(0, 0, W, H, Rgb(0, 0, 0));
+			emu::RedrawLastFrame();
+			ps5video::DarkenRect(0, 0, W, H);
+			ps5video::DarkenRect(0, 0, W, H);
+			DrawOptionBox("Controller layout: this game", rows, sel, true);
+		}
+		else
+		{
+			Header("Settings");
+			DrawOptionBox("Controller layout: all games", rows, sel, false);
+			Footer(help.c_str());
+		}
+		Present();
+
+		const Nav n = nav.Read();
+		if (n.up)
+			sel = (sel + kCount - 1) % kCount;
+		if (n.down)
+			sel = (sel + 1) % kCount;
+		if (sel < N64PS5_PAD_COUNT && (n.left || n.right || n.ok))
+			layout.to[sel] = (unsigned char)((layout.to[sel] + (n.left ? N64PS5_N64_COUNT - 1 : 1)) % N64PS5_N64_COUNT);
+		else if (sel == kReset && n.ok)
+			layout = in_game ? cfg.layout : Layout();
+		if (n.back || n.options || n.menu || (n.ok && sel == kBack))
+		{
+			if (in_game)
+				emu::SetGameLayout(layout);
+			else
+			{
+				cfg.layout = layout;
+				cfg.Save();
+			}
+			WaitForRelease();
+			return;
+		}
 	}
 }
 
@@ -391,6 +506,12 @@ void ChangeSetting(int s, int dir)
 		case S_OVERSCAN: c.hide_overscan = !c.hide_overscan; break;
 		case S_FPS: c.show_fps = !c.show_fps; break;
 		case S_AUDIO: c.audio = !c.audio; break;
+		case S_VOLUME:
+		{
+			static const int steps[] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+			c.volume = Step(c.volume, dir, steps, 11);
+			break;
+		}
 #ifdef N64PS5_VULKAN
 		case S_RENDERER: c.gpu = !c.gpu; break;
 		case S_UPSCALE:
@@ -423,6 +544,10 @@ void ChangeSetting(int s, int dir)
 		}
 		case S_INVERT: c.invert_stick = (c.invert_stick + dir + 4) & 3; break;
 		case S_INVERT_C: c.invert_c_stick = (c.invert_c_stick + dir + 4) & 3; break;
+		case S_LAYOUT:
+			if (dir > 0)
+				LayoutMenu();
+			break;
 		case S_RESUME: c.resume = !c.resume; break;
 		case S_VIEW: c.game_view = (std::clamp(c.game_view, 0, 2) + dir + 3) % 3; break;
 		case S_COVERS: c.covers_download = !c.covers_download; break;
