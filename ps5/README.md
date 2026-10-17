@@ -161,6 +161,10 @@ it, for every game or, from the pause menu, for one game)
 **The pause menu** has:
 
 - resume, save state, load state, and the state slot (0–9);
+- **cheats**: the GameShark codes of the core's `data/mupencheat.txt` (about 560 game versions, found by the ROM
+  header's CRCs and country; built into `eboot.bin` compressed, `frontend/fe_cheats.cpp`). Each one is off or on,
+  or off or one of its choices, with the database's note beside it; the ones left on are on again the next time
+  (`cheats/<ROM file>.txt`). Codes that need the GameShark's button are left out;
 - speed (normal or fast forward);
 - every setting below;
 - reset, back to the game list, and quit.
@@ -246,7 +250,7 @@ At every start, before it asks for `/data` (the console's HTTPS works only then,
   Interpreter.
 - **The RSP is the next bottleneck.** cxd4 interprets every graphics microcode instruction (GoldenEye:
   ~30% of the time); audio goes through rsp-hle (Audio processing: Fast).
-- **Unsupported:** 64DD, the Transfer Pak, screenshots, a cheats menu, netplay.
+- **Unsupported:** 64DD, the Transfer Pak, screenshots, netplay.
 - PAL games are paced by the core's millisecond limiter, so motion is less smooth than NTSC.
 
 ## Building

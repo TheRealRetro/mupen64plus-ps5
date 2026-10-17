@@ -752,6 +752,76 @@ std::string RomBrowser()
 	}
 }
 
+namespace
+{
+std::vector<std::string> WrapText(const std::string& text, int scale, int max_px); // below
+
+std::string CheatState(const cheats::Cheat& c)
+{
+	if (c.state == 0)
+		return "Off";
+	return c.options.empty() ? "On" : c.options[size_t(c.state - 1)].first;
+}
+
+// The running game's cheats: each one off / on, or off / one of its choices. The panel on the right says what
+// the database says about the selected one.
+void CheatsMenu()
+{
+	std::vector<cheats::Cheat>& list = emu::Cheats();
+	NavReader nav;
+	int sel = 0;
+	const int count = int(list.size()) + 1; // + Back
+	const std::string title = "Cheats: " + emu::CheatsGameName();
+	for (;;)
+	{
+		std::vector<Row> rows;
+		for (const cheats::Cheat& c : list)
+			rows.push_back({FitText(cheats::DisplayName(c.name), 3, 600), FitText(CheatState(c), 3, 260)});
+		rows.push_back({"Back", ""});
+
+		ps5video::FillRect(0, 0, W, H, Rgb(0, 0, 0));
+		emu::RedrawLastFrame();
+		ps5video::DarkenRect(0, 0, W, H);
+		ps5video::DarkenRect(0, 0, W, H);
+		DrawOptionBox(FitText(title, 5, 900).c_str(), rows, sel, true);
+		// right of the box: the selected cheat's note, or the general caution
+		const int px = (W + 1000) / 2 + 30, pw = W - px - 30;
+		const std::string note = sel < int(list.size()) && !list[size_t(sel)].note.empty()
+									 ? list[size_t(sel)].note
+									 : "Cheats can make a game misbehave or crash. If one does, turn it off (or reset the game).";
+		const std::vector<std::string> lines = WrapText(note, 3, pw - 40);
+		const int ph = 90 + int(std::min<size_t>(lines.size(), 16)) * 40;
+		ps5video::FillRect(px, 120, pw, ph, kPanel);
+		DrawText(px + 20, 140, sel < int(list.size()) && !list[size_t(sel)].note.empty() ? "About this cheat" : "Note", 3,
+			kAccent);
+		for (size_t i = 0; i < lines.size() && i < 16; i++)
+			DrawText(px + 20, 200 + int(i) * 40, lines[i].c_str(), 3, kText);
+		Present();
+
+		const Nav n = nav.Read();
+		if (n.up)
+			sel = (sel + count - 1) % count;
+		if (n.down)
+			sel = (sel + 1) % count;
+		if (n.pgup)
+			sel = std::max(0, sel - 10);
+		if (n.pgdn)
+			sel = std::min(count - 1, sel + 10);
+		if (sel < int(list.size()) && (n.left || n.right || n.ok))
+		{
+			const cheats::Cheat& c = list[size_t(sel)];
+			emu::SetCheat(sel, (c.state + (n.left ? c.States() - 1 : 1)) % c.States());
+		}
+		if (n.back || n.options || n.menu || (n.ok && sel == count - 1))
+		{
+			WaitForRelease();
+			return;
+		}
+	}
+}
+
+} // namespace
+
 PauseAction PauseMenu()
 {
 	Settings& cfg = Config();
@@ -764,6 +834,7 @@ PauseAction PauseMenu()
 		I_LOAD,
 		I_SLOT,
 		I_SPEED,
+		I_CHEATS,
 		I_SET0, // the S_* settings follow
 		I_RESET = I_SET0 + S_COUNT,
 		I_LIST,
@@ -791,6 +862,15 @@ PauseAction PauseMenu()
 		snprintf(slot, sizeof(slot), "%d%s", cfg.state_slot, emu::StateExists(cfg.state_slot) ? " (used)" : " (empty)");
 		rows[I_SLOT] = {"State slot", slot};
 		rows[I_SPEED] = {"Speed", emu::FastForward() ? "Fast forward" : "Normal"};
+		{
+			int on = 0;
+			for (const cheats::Cheat& c : emu::Cheats())
+				on += c.state ? 1 : 0;
+			char cheats_on[32];
+			snprintf(cheats_on, sizeof(cheats_on), "%d on", on);
+			rows[I_CHEATS] = {"Cheats", emu::Cheats().empty() ? "None for this game" : on ? cheats_on : "Off",
+				!emu::Cheats().empty()};
+		}
 		for (int s = 0; s < S_COUNT; s++)
 			rows[I_SET0 + s] = {SettingLabel(s), SettingValue(s)};
 		rows[I_RESET] = {"Reset game", ""};
@@ -818,6 +898,8 @@ PauseAction PauseMenu()
 			cfg.state_slot = (cfg.state_slot + (n.left ? 9 : 1)) % 10;
 		else if (sel == I_SPEED && (n.left || n.right || n.ok))
 			emu::SetFastForward(!emu::FastForward());
+		else if (sel == I_CHEATS && n.ok && !emu::Cheats().empty())
+			CheatsMenu();
 		else if (sel >= I_SET0 && sel < I_SET0 + S_COUNT && (n.left || n.right || n.ok))
 		{
 			ChangeSetting(sel - I_SET0, n.left ? -1 : 1);

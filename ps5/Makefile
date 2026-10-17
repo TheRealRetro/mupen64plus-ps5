@@ -123,7 +123,7 @@ EMU_SRC := coreorbis/main-boot.cpp \
 	coreorbis/orbis-shims/ProsperoCrash.cpp coreorbis/orbis-shims/ProsperoUpdateJob.cpp \
 	frontend/fe_emu.cpp frontend/fe_menu.cpp frontend/fe_settings.cpp frontend/fe_text.cpp \
 	frontend/fe_games.cpp frontend/fe_http.cpp frontend/fe_covers.cpp frontend/fe_shelf.cpp \
-	frontend/fe_prefetch.cpp frontend/fe_update.cpp
+	frontend/fe_prefetch.cpp frontend/fe_update.cpp frontend/fe_cheats.cpp
 # the payloads: the helper, and the installer (= helper + install)
 HELPER_SRC := coreorbis/orbis-shims/orbis_paths.cpp coreorbis/orbis-shims/ProsperoNotify.cpp \
 	coreorbis/orbis-shims/ProsperoHelper.cpp coreorbis/orbis-shims/ProsperoUpdateJob.cpp
@@ -155,6 +155,13 @@ $(GAMEDB): tools/make_n64db.py $(M64_INI) $(BOXARTS)
 %/port/frontend/fe_games.o: EXTRA_FLAGS = -DGAMEDB_TSV='"$(abspath $(GAMEDB))"'
 # the ROM catalog itself goes into fe_emu.o (written to /data/mupen64plus/data for the core)
 %/port/frontend/fe_emu.o: EXTRA_FLAGS = -DM64P_INI_PATH='"$(abspath $(M64_INI))"'
+# the core's cheat database (1.2 MB of text), compressed into fe_cheats.o: 4 bytes of size, then zlib
+CHEATS_Z := build/gen/mupencheat.z
+$(CHEATS_Z): $(M64)/data/mupencheat.txt
+	@mkdir -p $(dir $@)
+	python3 -c "import struct, sys, zlib; d = open(sys.argv[1], 'rb').read(); \
+		open(sys.argv[2], 'wb').write(struct.pack('<I', len(d)) + zlib.compress(d, 9))" $< $@
+%/port/frontend/fe_cheats.o: EXTRA_FLAGS = -DCHEATS_Z='"$(abspath $(CHEATS_Z))"'
 # stb_image in fe_covers.o has warnings of its own
 %/port/frontend/fe_covers.o: EXTRA_FLAGS = -Wno-error -Wno-sign-compare -Wno-unused-but-set-variable -Wno-implicit-fallthrough
 # the UI fonts (PS5SX2's: PCSX2's Roboto Regular and PromptFont) built into fe_text.o
@@ -597,6 +604,7 @@ $(HOST_OUT)/mupen64plus-ps5-host: $(HOST_CORE_OBJ) $(HOST_EMU_OBJ) $(HOST_ZLIB_O
 # the files built into fe_games.o / fe_emu.o
 $(PS5_OUT)/port/frontend/fe_games.o $(HOST_OUT)/port/frontend/fe_games.o: $(GAMEDB)
 $(PS5_OUT)/port/frontend/fe_emu.o $(HOST_OUT)/port/frontend/fe_emu.o: $(M64_INI)
+$(PS5_OUT)/port/frontend/fe_cheats.o $(HOST_OUT)/port/frontend/fe_cheats.o: $(CHEATS_Z)
 
 clean:
 	rm -rf build

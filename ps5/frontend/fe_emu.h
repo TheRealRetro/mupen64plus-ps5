@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe_cheats.h"
 #include "fe_settings.h"
 
 #include <string>
@@ -26,6 +27,11 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume = fa
 bool ResumeStateExists(const std::string& rom, std::string* saved_at = nullptr);
 
 bool GameLoaded();
+// The running game's cheats (fe_cheats.h; empty when the database has none for it), and switching one
+// (pause menu): applied at once and remembered for the game in cheats/<ROM file>.txt.
+std::vector<fe::cheats::Cheat>& Cheats();
+std::string CheatsGameName();
+void SetCheat(int index, int state);
 // The running game's controller layout: its own (fe::LoadGameLayout) or else the one of Settings. Setting it
 // (pause menu) gives the game its own layout file, unless it is the same as Settings' again.
 fe::Layout GameLayout();

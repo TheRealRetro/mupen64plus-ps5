@@ -17,6 +17,8 @@
 
 #include "fe_emu.h"
 
+#include "fe_cheats.h"
+
 #include "fe_games.h"
 #include "fe_menu.h"
 #include "fe_settings.h"
@@ -49,6 +51,7 @@
 #include <cstdarg>
 #include <dirent.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <mutex>
@@ -225,6 +228,9 @@ struct State
 	bool game_layout = false;
 	bool own_layout = false;
 	fe::Layout layout;
+	// cheats: the database's for this ROM, with what the player chose
+	std::vector<fe::cheats::Cheat> cheats;
+	std::string cheats_game;
 	// "continue where you left off": the state loaded at the first VI, and the one saved on the way out
 	bool resume_load = false;
 	bool resume_loading = false;
@@ -485,6 +491,72 @@ std::string FileBase(const std::string& path)
 	if (const size_t d = base.find_last_of('.'); d != std::string::npos && d > 0)
 		base.resize(d);
 	return base;
+}
+
+// The cheats the player left on, by name: "<state>\t<name>" lines (fe_cheats.h's state).
+std::string CheatsPath()
+{
+	return OrbisDir("cheats") + "/" + g.file_base + ".txt";
+}
+
+void LoadCheatStates()
+{
+	FILE* f = fopen(CheatsPath().c_str(), "r");
+	if (!f)
+		return;
+	char line[512];
+	while (fgets(line, sizeof(line), f))
+	{
+		line[strcspn(line, "\r\n")] = 0;
+		char* tab = strchr(line, '\t');
+		if (!tab)
+			continue;
+		*tab = 0;
+		const int state = atoi(line);
+		for (fe::cheats::Cheat& c : g.cheats)
+			if (c.name == tab + 1 && state > 0 && state < c.States())
+				c.state = state;
+	}
+	fclose(f);
+}
+
+void SaveCheatStates()
+{
+	std::string text;
+	for (const fe::cheats::Cheat& c : g.cheats)
+		if (c.state)
+			text += std::to_string(c.state) + "\t" + c.name + "\n";
+	if (text.empty())
+	{
+		unlink(CheatsPath().c_str());
+		return;
+	}
+	OrbisMkdirs(OrbisDir("cheats"));
+	if (FILE* f = fopen(CheatsPath().c_str(), "w"))
+	{
+		fputs(text.c_str(), f);
+		fclose(f);
+	}
+}
+
+// Hands cheat `index` to the core as it is now: on (with its codes, the chosen option's value in place of
+// "????") or off (the core puts the old values back). Its name in the core is unique: "<index>:<name>".
+void ApplyCheat(int index)
+{
+	const fe::cheats::Cheat& c = g.cheats[size_t(index)];
+	const std::string id = std::to_string(index) + ":" + c.name;
+	if (c.state == 0)
+	{
+		CoreCheatEnabled(id.c_str(), 0);
+		return;
+	}
+	const int choice = c.options.empty() ? 0 : c.options[size_t(c.state - 1)].second;
+	std::vector<m64p_cheat_code> codes;
+	for (size_t i = 0; i < c.addresses.size(); i++)
+		codes.push_back({c.addresses[i], c.values[i] < 0 ? choice : c.values[i]});
+	const m64p_error r = CoreAddCheat(id.c_str(), codes.data(), int(codes.size()));
+	if (r != M64ERR_SUCCESS)
+		OrbisLog("[cheats] the core refused \"%s\" (%d)", c.name.c_str(), int(r));
 }
 
 // "Continue where you left off": saved when the player leaves the game from the pause menu.
@@ -811,6 +883,21 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 	n64ps5_rsp_set_hle(cfg.hle_audio);
 	static const char* const kPaks[] = {"none", "Controller Pak", "Rumble Pak"};
 	OrbisLog("[emu] controller pak: %s", kPaks[cfg.pak < 0 || cfg.pak > 2 ? 1 : cfg.pak]);
+	// cheats: the database's for this ROM (by the header's CRCs and country), the ones left on are on again
+	g.cheats_game.clear();
+	g.cheats = fe::cheats::ForGame(__builtin_bswap32(header.CRC1), __builtin_bswap32(header.CRC2),
+		header.Country_code, &g.cheats_game);
+	LoadCheatStates();
+	std::string cheats_on;
+	for (size_t i = 0; i < g.cheats.size(); i++)
+		if (g.cheats[i].state)
+		{
+			ApplyCheat(int(i));
+			cheats_on += (cheats_on.empty() ? ": " : ", ") + fe::cheats::DisplayName(g.cheats[i].name);
+		}
+	if (!g.cheats.empty())
+		OrbisLog("[cheats] %zu for \"%s\"%s", g.cheats.size(), g.cheats_game.c_str(),
+			cheats_on.empty() ? ", none on" : cheats_on.c_str());
 	OrbisLog("[emu] controller layout: %s%s", g.own_layout ? "this game's own " : "",
 		g.layout == fe::Layout() ? "(the N64 pad's)" : fe::LayoutToText(g.layout).c_str());
 	LogSaves("at start", settings.goodname, settings.MD5);
@@ -917,6 +1004,28 @@ bool ResumeStateExists(const std::string& rom, std::string* saved_at)
 bool GameLoaded()
 {
 	return g.running;
+}
+
+std::vector<fe::cheats::Cheat>& Cheats()
+{
+	return g.cheats;
+}
+
+std::string CheatsGameName()
+{
+	return g.cheats_game;
+}
+
+void SetCheat(int index, int state)
+{
+	if (!g.running || index < 0 || index >= int(g.cheats.size()))
+		return;
+	fe::cheats::Cheat& c = g.cheats[size_t(index)];
+	c.state = state < 0 || state >= c.States() ? 0 : state;
+	ApplyCheat(index);
+	SaveCheatStates();
+	OrbisLog("[cheats] %s: %s", fe::cheats::DisplayName(c.name).c_str(),
+		c.state == 0 ? "off" : c.options.empty() ? "on" : c.options[size_t(c.state - 1)].first.c_str());
 }
 
 fe::Layout GameLayout()
