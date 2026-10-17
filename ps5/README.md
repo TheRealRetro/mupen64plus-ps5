@@ -319,8 +319,10 @@ its NASM stubs are translated to GNU syntax in `n64/core/linkage_x64.S`, and the
 generated from the core's `asm_defines.c` with its own `tools/gen_asm_script.sh`. On the host,
 `N64PS5_JIT=direct` exercises the PS5's direct-memory way (an anonymous RWX mapping stands in for it).
 
-**Art.** `tools/make_art.py app/sce_sys` redraws `icon0.png`, `background-source.png` and the BC7
-`pic0.dds`/`pic1.dds`.
+**Art.** The home screen's icon and background are pictures in `app/art/` (`icon.png`, `background.png`).
+`tools/make_art.py app/sce_sys --images app/art/icon.png app/art/background.png` fits them to `icon0.png`
+(512x512) and `background-source.png` (3840x2160) and writes the BC7 `pic0.dds`/`pic1.dds`; without
+`--images` it draws the old art itself.
 
 ## Source layout
 

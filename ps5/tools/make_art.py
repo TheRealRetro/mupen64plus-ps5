@@ -5,7 +5,8 @@
 # The BC7 encoder is a small one: every 4x4 block in mode 6 (two RGBA endpoints, 4-bit indices), endpoints
 # from the block's colour bounding box. Plenty for a smooth background.
 #
-#   make_art.py <out-dir> [font.ttf bold.ttf]     (needs Pillow and numpy)
+#   make_art.py <out-dir> [font.ttf bold.ttf]     draws its own (needs Pillow and numpy)
+#   make_art.py <out-dir> --images <icon> <bg>    from pictures (app/art/icon.png, app/art/background.png)
 #
 # SPDX-License-Identifier: MIT
 import os
@@ -13,7 +14,7 @@ import struct
 import sys
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 ACCENT = (255, 196, 64)
 BLUE = (64, 140, 255)
@@ -145,11 +146,17 @@ def dds_bc7(width, height, data):
 
 def main():
     out = sys.argv[1]
-    black = sys.argv[2] if len(sys.argv) > 2 else "C:/Windows/Fonts/seguibl.ttf"
-    bold = sys.argv[3] if len(sys.argv) > 3 else "C:/Windows/Fonts/segoeuib.ttf"
     os.makedirs(out, exist_ok=True)
-    make_icon(black, bold).save(os.path.join(out, "icon0.png"), optimize=True)
-    bg = make_background(black, bold)
+    if len(sys.argv) > 4 and sys.argv[2] == "--images":
+        # pictures made elsewhere (app/art/): fitted to the icon's and the background's sizes
+        ImageOps.fit(Image.open(sys.argv[3]).convert("RGB"), (512, 512), Image.LANCZOS).save(
+            os.path.join(out, "icon0.png"), optimize=True)
+        bg = ImageOps.fit(Image.open(sys.argv[4]).convert("RGB"), (3840, 2160), Image.LANCZOS)
+    else:
+        black = sys.argv[2] if len(sys.argv) > 2 else "C:/Windows/Fonts/seguibl.ttf"
+        bold = sys.argv[3] if len(sys.argv) > 3 else "C:/Windows/Fonts/segoeuib.ttf"
+        make_icon(black, bold).save(os.path.join(out, "icon0.png"), optimize=True)
+        bg = make_background(black, bold)
     bg.save(os.path.join(out, "background-source.png"), optimize=True)
     dds = dds_bc7(bg.width, bg.height, bc7_encode(bg))
     for name in ("pic0.dds", "pic1.dds"):
