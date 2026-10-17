@@ -72,7 +72,8 @@ The GPU renderer needs RADV built first (mihawk-99/PS5_Vulkan, in WSL `/root/gpu
 Releasing:
 
 1. Raise `VERSION` in `ps5/Makefile`, and set the matching `contentVersion` in `ps5/app/sce_sys/param.json`
-   (0.7.0 → `00.007.000`; the build stops if they differ). That number is also the release tag.
+   (0.7.0 → `00.007.000`; the build stops if they differ). The release tag is the version as people write it
+   (`0.7.4`; up to 0.7.3 it was the `contentVersion`, `00.007.003`). The app reads both as numbers.
 2. Write `release-notes/<contentVersion>.md`: a few short lines, shown on the console in the update question.
 3. Commit and push, then run `release.bat`. It builds, creates the release with `Mupen64PlusPS5.zip`, and checks
    GitHub's digest against the local zip.
