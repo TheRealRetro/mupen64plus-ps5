@@ -18,6 +18,7 @@
 #include "ProsperoCrash.h"
 #include "ProsperoInput.h"
 #include "ProsperoJailbreak.h"
+#include "ProsperoKeyboard.h"
 #include "ProsperoNotify.h"
 #include "ProsperoSce.h"
 #include "ProsperoVideo.h"
@@ -106,6 +107,8 @@ int Run(int argc, char** argv)
 	// A newer release on GitHub, downloaded now for the same reason (fe_update.h); offered further down.
 	N64_STAGE(Boot, "update check");
 	fe::UpdateOffer update = fe::CheckForUpdate();
+	// the on-screen keyboard's system module (cheat names and codes): out of the sandbox it can't be loaded
+	ps5keyboard::Preload();
 
 	// out of the sandbox, like PS5SX2: before it the app sees no /data and no USB drives
 	N64_STAGE(Boot, "jailbreak");

@@ -169,7 +169,20 @@ game (after a question), Triangle back to the game list, Cross confirm, Circle b
 - **cheats**: the GameShark codes of the core's `data/mupencheat.txt` (about 560 game versions, found by the ROM
   header's CRCs and country; built into `eboot.bin` compressed, `frontend/fe_cheats.cpp`). Each one is off or on,
   or off or one of its choices, with the database's note beside it; the ones left on are on again the next time
-  (`cheats/<ROM file>.txt`). Codes that need the GameShark's button are left out;
+  (`cheats/<ROM file>.txt`). Codes that need the GameShark's button are left out. Above the list:
+  - **Search for a Cheat** (`frontend/fe_search.cpp`): finds where the game keeps a value in its RAM. It starts
+    from every 8, 16 or 32-bit value, either equal to a number or unknown, and each step keeps the addresses whose
+    value is (not) the number, went up or down (by the number), changed or didn't, since the step before; Undo
+    goes one step back. A result becomes a cheat (GameShark 80 / 81 codes keeping the value) or is set once
+    (`n64/core/memory_ps5.c` reads and writes the RDRAM);
+  - **Type In Codes**: GameShark codes typed on the PS5's keyboard.
+
+  The player's own cheats come first in the list (Square renames one, changes its codes or deletes it; on one of
+  the database's, Square makes an own copy to change) and are kept in `cheats/<ROM file>.custom.txt` in the
+  database's format, so codes can be put there from a PC too. Names and codes are typed on the system's on-screen
+  keyboard (`libSceImeDialog`, `coreorbis/orbis-shims/ProsperoKeyboard.cpp`). Its system module is loaded at
+  start, before the app leaves the sandbox: afterwards the system looks for modules inside the sandbox and doesn't
+  find them (`80020063`). Where it doesn't load the app still runs, only without typing;
 - speed (normal or fast forward);
 - every setting below but the game list's (Continue where you left off, Game list view, Download covers, Check
   for updates: Settings on the game list has them);
@@ -311,8 +324,8 @@ ROM, on Linux:
 N64PS5_PS5_ROOT=/tmp/n64 N64PS5_HOST_DUMP=150 N64PS5_HOST_MAX_FLIPS=200 build/host/mupen64plus-ps5-host test.z64
 ```
 
-The run writes flip 150 to a `.ppm` file. `N64PS5_HOST_PAD="frame:buttons;..."` scripts the pad (see
-`host/sce_host.cpp`).
+The run writes flip 150 to a `.ppm` file. `N64PS5_HOST_PAD="frame:buttons;..."` scripts the pad, and
+`N64PS5_HOST_IME="text|text..."` what is typed on the keyboard each time it opens (see `host/sce_host.cpp`).
 
 **Dynarec.** `new_dynarec.c` is built with `-Dmprotect=n64ps5_jit_mprotect` (no change to the core's source),
 its NASM stubs are translated to GNU syntax in `n64/core/linkage_x64.S`, and the struct offsets they need are

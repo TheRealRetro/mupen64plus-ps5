@@ -293,6 +293,18 @@ void DrawIcon(Icon icon, int x, int y, int size, uint32_t color)
 			FillTriangle(cx - s * 0.25f, y + s * 0.45f, cx + s * 0.25f, y + s * 0.45f, cx, y + s * 0.72f, color);
 			FillRoundRect(x + int(s * 0.12f), y + int(s * 0.8f), int(s * 0.76f), std::max(2, int(s * 0.09f)), 1, color);
 			break;
+		case Icon::Search:
+		{
+			// a magnifying glass: a ring at the upper left, its handle down to the lower right
+			const float r = s * 0.25f, rx = x + s * 0.42f, ry = y + s * 0.42f;
+			StrokeArc(rx, ry, r, s * 0.1f, 0.0f, 360.0f, color);
+			const float d = 0.70710678f, hw = s * 0.07f;
+			const float ax = rx + (r + s * 0.03f) * d, ay = ry + (r + s * 0.03f) * d;
+			const float bx = x + s * 0.9f, by = y + s * 0.9f;
+			FillTriangle(ax - hw * d, ay + hw * d, ax + hw * d, ay - hw * d, bx + hw * d, by - hw * d, color);
+			FillTriangle(ax - hw * d, ay + hw * d, bx + hw * d, by - hw * d, bx - hw * d, by + hw * d, color);
+			break;
+		}
 	}
 }
 } // namespace gfx

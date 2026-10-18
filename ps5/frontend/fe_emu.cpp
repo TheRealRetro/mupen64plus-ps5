@@ -228,9 +228,11 @@ struct State
 	bool game_layout = false;
 	bool own_layout = false;
 	fe::Layout layout;
-	// cheats: the database's for this ROM, with what the player chose
+	// cheats: the player's own, then the database's for this ROM, with what the player chose
 	std::vector<fe::cheats::Cheat> cheats;
 	std::string cheats_game;
+	int next_uid = 0;
+	fe::search::Search search; // the cheat search, while the game runs
 	// "continue where you left off": the state loaded at the first VI, and the one saved on the way out
 	bool resume_load = false;
 	bool resume_loading = false;
@@ -539,12 +541,52 @@ void SaveCheatStates()
 	}
 }
 
+// The player's own cheats: cheats/<ROM file>.custom.txt, in the database's format (fe::cheats::Parse).
+std::string CustomCheatsPath()
+{
+	return OrbisDir("cheats") + "/" + g.file_base + ".custom.txt";
+}
+
+std::vector<fe::cheats::Cheat> LoadCustomCheats()
+{
+	std::string text;
+	if (FILE* f = fopen(CustomCheatsPath().c_str(), "r"))
+	{
+		char buf[4096];
+		size_t n;
+		while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+			text.append(buf, n);
+		fclose(f);
+	}
+	return fe::cheats::Parse(text);
+}
+
+void SaveCustomCheats()
+{
+	std::vector<fe::cheats::Cheat> mine;
+	for (const fe::cheats::Cheat& c : g.cheats)
+		if (c.mine)
+			mine.push_back(c);
+	if (mine.empty())
+	{
+		unlink(CustomCheatsPath().c_str());
+		return;
+	}
+	OrbisMkdirs(OrbisDir("cheats"));
+	if (FILE* f = fopen(CustomCheatsPath().c_str(), "w"))
+	{
+		fputs(fe::cheats::Format(mine).c_str(), f);
+		fclose(f);
+	}
+}
+
 // Hands cheat `index` to the core as it is now: on (with its codes, the chosen option's value in place of
-// "????") or off (the core puts the old values back). Its name in the core is unique: "<index>:<name>".
+// "????") or off (the core puts the old values back). Its name in the core is "#<uid>", which stays the same
+// while the game runs whatever the list or the cheat's name does.
 void ApplyCheat(int index)
 {
 	const fe::cheats::Cheat& c = g.cheats[size_t(index)];
-	const std::string id = std::to_string(index) + ":" + c.name;
+	const std::string id = "#" + std::to_string(c.uid);
 	if (c.state == 0)
 	{
 		CoreCheatEnabled(id.c_str(), 0);
@@ -890,10 +932,20 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 	n64ps5_rsp_set_hle(cfg.hle_audio);
 	static const char* const kPaks[] = {"none", "Controller Pak", "Rumble Pak"};
 	OrbisLog("[emu] controller pak: %s", kPaks[cfg.pak < 0 || cfg.pak > 2 ? 1 : cfg.pak]);
-	// cheats: the database's for this ROM (by the header's CRCs and country), the ones left on are on again
+	// cheats: the player's own, then the database's for this ROM (by the header's CRCs and country); the ones
+	// left on are on again
 	g.cheats_game.clear();
-	g.cheats = fe::cheats::ForGame(__builtin_bswap32(header.CRC1), __builtin_bswap32(header.CRC2),
-		header.Country_code, &g.cheats_game);
+	g.cheats = LoadCustomCheats();
+	const size_t mine = g.cheats.size();
+	for (fe::cheats::Cheat& c : fe::cheats::ForGame(__builtin_bswap32(header.CRC1), __builtin_bswap32(header.CRC2),
+			 header.Country_code, &g.cheats_game))
+		g.cheats.push_back(std::move(c));
+	g.next_uid = 0;
+	for (fe::cheats::Cheat& c : g.cheats)
+		c.uid = ++g.next_uid;
+	if (mine)
+		OrbisLog("[cheats] %zu of your own", mine);
+	g.search.Clear();
 	LoadCheatStates();
 	std::string cheats_on;
 	for (size_t i = 0; i < g.cheats.size(); i++)
@@ -984,6 +1036,7 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume)
 	g.leaving = false;
 	g.running = false;
 	g.game_layout = false;
+	g.search.Clear(); // its 10-20 MB
 	N64_STAGE(Emu, "idle");
 	if (r != M64ERR_SUCCESS && g.vi == 0)
 	{
@@ -1033,6 +1086,92 @@ void SetCheat(int index, int state)
 	SaveCheatStates();
 	OrbisLog("[cheats] %s: %s", fe::cheats::DisplayName(c.name).c_str(),
 		c.state == 0 ? "off" : c.options.empty() ? "on" : c.options[size_t(c.state - 1)].first.c_str());
+}
+
+std::string UniqueCheatName(const std::string& name, int except)
+{
+	std::string base = name.empty() ? "My cheat" : name, out = base;
+	for (int n = 2;; n++)
+	{
+		bool taken = false;
+		for (size_t i = 0; i < g.cheats.size(); i++)
+			taken |= int(i) != except && g.cheats[i].name == out;
+		if (!taken)
+			return out;
+		out = base + " (" + std::to_string(n) + ")";
+	}
+}
+
+int AddMyCheat(const fe::cheats::Cheat& cheat)
+{
+	if (!g.running)
+		return -1;
+	fe::cheats::Cheat c = cheat;
+	c.mine = true;
+	c.uid = ++g.next_uid;
+	c.name = UniqueCheatName(c.name, -1);
+	c.state = 1;
+	// after the player's other own cheats, before the database's
+	size_t at = 0;
+	while (at < g.cheats.size() && g.cheats[at].mine)
+		at++;
+	g.cheats.insert(g.cheats.begin() + long(at), c);
+	ApplyCheat(int(at));
+	SaveCustomCheats();
+	SaveCheatStates();
+	OrbisLog("[cheats] yours: \"%s\" (%s), on", c.name.c_str(), fe::cheats::CodesText(c).c_str());
+	return int(at);
+}
+
+void UpdateMyCheat(int index, const fe::cheats::Cheat& cheat)
+{
+	if (!g.running || index < 0 || index >= int(g.cheats.size()) || !g.cheats[size_t(index)].mine)
+		return;
+	fe::cheats::Cheat& c = g.cheats[size_t(index)];
+	c.name = UniqueCheatName(cheat.name, index);
+	c.note = cheat.note;
+	c.addresses = cheat.addresses;
+	c.values = cheat.values;
+	c.options = cheat.options;
+	if (c.state >= c.States())
+		c.state = 1;
+	if (c.state)
+		ApplyCheat(index); // the new codes
+	SaveCustomCheats();
+	SaveCheatStates();
+	OrbisLog("[cheats] yours: \"%s\" changed (%s)", c.name.c_str(), fe::cheats::CodesText(c).c_str());
+}
+
+void DeleteMyCheat(int index)
+{
+	if (!g.running || index < 0 || index >= int(g.cheats.size()) || !g.cheats[size_t(index)].mine)
+		return;
+	g.cheats[size_t(index)].state = 0;
+	ApplyCheat(index); // off: the core puts the old values back
+	OrbisLog("[cheats] yours: \"%s\" deleted", g.cheats[size_t(index)].name.c_str());
+	g.cheats.erase(g.cheats.begin() + index);
+	SaveCustomCheats();
+	SaveCheatStates();
+}
+
+fe::search::Search& CheatSearch()
+{
+	return g.search;
+}
+
+const uint32_t* Ram(uint32_t* size)
+{
+	*size = 0;
+	return g.running ? n64ps5_ram(size) : nullptr;
+}
+
+void PokeRam(uint32_t address, uint32_t value, int bytes)
+{
+	if (g.running)
+	{
+		n64ps5_ram_write(address, value, bytes);
+		OrbisLog("[cheats] RAM %08X = %u (%d-bit)", unsigned(0x80000000u | address), unsigned(value), bytes * 8);
+	}
 }
 
 fe::Layout GameLayout()

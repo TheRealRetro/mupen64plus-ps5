@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe_cheats.h"
+#include "fe_search.h"
 #include "fe_settings.h"
 
 #include <string>
@@ -27,11 +28,23 @@ ExitReason RunGame(const std::string& path, std::string* error, bool resume = fa
 bool ResumeStateExists(const std::string& rom, std::string* saved_at = nullptr);
 
 bool GameLoaded();
-// The running game's cheats (fe_cheats.h; empty when the database has none for it), and switching one
-// (pause menu): applied at once and remembered for the game in cheats/<ROM file>.txt.
+// The running game's cheats (fe_cheats.h): the player's own first, then the database's (none when it has none
+// for the game). Switching one (pause menu) applies it at once; what is on is remembered for the game in
+// cheats/<ROM file>.txt.
 std::vector<fe::cheats::Cheat>& Cheats();
 std::string CheatsGameName();
 void SetCheat(int index, int state);
+// The player's own cheats, kept in cheats/<ROM file>.custom.txt: a new one (turned on; its index is returned),
+// changed (its name, note and codes) or deleted. Names are made unique: "Lives" -> "Lives (2)".
+int AddMyCheat(const fe::cheats::Cheat& cheat);
+void UpdateMyCheat(int index, const fe::cheats::Cheat& cheat);
+void DeleteMyCheat(int index);
+std::string UniqueCheatName(const std::string& name, int except = -1);
+// The cheat search (fe_search.h) of the running game, over its RAM (nullptr when no game runs). PokeRam writes a
+// value once (the cheat search's "Set it now").
+fe::search::Search& CheatSearch();
+const uint32_t* Ram(uint32_t* size);
+void PokeRam(uint32_t address, uint32_t value, int bytes);
 // The running game's controller layout: its own (fe::LoadGameLayout) or else the one of Settings. Setting it
 // (pause menu) gives the game its own layout file, unless it is the same as Settings' again.
 fe::Layout GameLayout();

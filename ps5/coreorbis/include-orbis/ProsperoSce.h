@@ -177,6 +177,57 @@ int sceUserServiceInitialize(void* params);
 int sceUserServiceGetForegroundUser(int32_t* user);
 int sceUserServiceGetLoginUserIdList(int32_t users[4]);
 
+// ---- libSceSysmodule: a system module the app loads while it runs ---------------------------------------
+// Its functions are imported like the others, but they work only once the module is loaded (ps5-generals'
+// SDL_ps5kbm.c does the same for the keyboard 0x0106 and the mouse 0x00a9, the PS4's numbers).
+#define SCE_SYSMODULE_IME_DIALOG 0x0096
+int sceSysmoduleLoadModule(uint16_t id);
+
+// ---- libSceImeDialog (the on-screen keyboard; PS4's layout, as shadPS4's ime_dialog.h has it) -------------
+// Called only after sceSysmoduleLoadModule(SCE_SYSMODULE_IME_DIALOG) succeeded (ProsperoKeyboard.cpp). Loading
+// the .sprx by its path doesn't work from the app (sceKernelLoadStartModule: 80020063).
+#define SCE_IME_TYPE_DEFAULT 0
+#define SCE_IME_TYPE_BASIC_LATIN 1
+#define SCE_IME_TYPE_NUMBER 4
+#define SCE_IME_HALIGN_CENTER 1
+#define SCE_IME_VALIGN_CENTER 1
+#define SCE_IME_DIALOG_MAX_TEXT_LENGTH 2048
+#define SCE_IME_DIALOG_STATUS_NONE 0
+#define SCE_IME_DIALOG_STATUS_RUNNING 1
+#define SCE_IME_DIALOG_STATUS_FINISHED 2
+#define SCE_IME_DIALOG_END_STATUS_OK 0
+#define SCE_IME_DIALOG_END_STATUS_USER_CANCELED 1
+#define SCE_IME_DIALOG_END_STATUS_ABORTED 2
+
+typedef struct SceImeDialogParam
+{
+	int32_t userId;
+	int32_t type; // SCE_IME_TYPE_*
+	uint64_t supportedLanguages; // 0: the system's
+	int32_t enterLabel; // 0: Done
+	int32_t inputMethod; // 0
+	void* filter;
+	uint32_t option;
+	uint32_t maxTextLength; // characters, the buffer holds one more
+	uint16_t* inputTextBuffer; // UTF-16: the text to start with, and the result
+	float posx, posy; // the text field, 1920 x 1080
+	int32_t horizontalAlignment, verticalAlignment;
+	const uint16_t* placeholder;
+	const uint16_t* title;
+	int8_t reserved[16];
+} SceImeDialogParam;
+
+typedef struct SceImeDialogResult
+{
+	int32_t endstatus; // SCE_IME_DIALOG_END_STATUS_*
+	int32_t reserved[12];
+} SceImeDialogResult;
+
+int sceImeDialogInit(const SceImeDialogParam* param, const void* extended);
+int sceImeDialogGetStatus(void); // SCE_IME_DIALOG_STATUS_*
+int sceImeDialogGetResult(SceImeDialogResult* result);
+int sceImeDialogTerm(void);
+
 // ---- libSceNet / libSceNetCtl / libSceSsl / libSceHttp2 (as the SDK's http2_get sample and PS5SX2) ----
 int sceNetInit(void);
 int sceNetPoolCreate(const char* name, int size, int flags);

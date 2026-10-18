@@ -6,6 +6,7 @@
 //   N64PS5_HOST_DUMP_DIR=dir                                  where (default .)
 //   N64PS5_HOST_MAX_FLIPS=n                                   abort after n flips (a hang guard)
 //   N64PS5_HOST_REALTIME=1                                    flips wait 1/60 s
+//   N64PS5_HOST_IME="text[|text...]"                          what is typed on the keyboard, in turn ("!" cancels)
 //
 // SPDX-License-Identifier: MIT
 
@@ -198,6 +199,77 @@ int sceKernelUsleep(unsigned int usec)
 {
 	return usleep(usec);
 }
+// ---- libSceSysmodule (only the IME dialog loads) and libSceImeDialog, faked --------------------------------
+// N64PS5_HOST_IME="text[|text...]": what the player types in each keyboard opened, in turn ("!" cancels it; with
+// none left, it is canceled). The keyboard stays up for three status calls.
+static std::vector<std::string> g_ime_texts;
+static size_t g_ime_next = 0;
+static int g_ime_polls = -1; // -1: not open
+static bool g_ime_cancel = false;
+static SceImeDialogParam g_ime_param;
+
+int sceImeDialogInit(const SceImeDialogParam* p, const void*)
+{
+	if (g_ime_polls >= 0)
+		return (int)0x80bc0001; // busy
+	static bool parsed = false;
+	if (!parsed)
+	{
+		parsed = true;
+		if (const char* s = getenv("N64PS5_HOST_IME"))
+		{
+			std::string str = s;
+			size_t pos = 0;
+			for (;;)
+			{
+				const size_t end = str.find('|', pos);
+				g_ime_texts.push_back(str.substr(pos, end == std::string::npos ? std::string::npos : end - pos));
+				if (end == std::string::npos)
+					break;
+				pos = end + 1;
+			}
+		}
+	}
+	g_ime_param = *p;
+	g_ime_polls = 0;
+	std::string title;
+	for (const uint16_t* t = p->title; t && *t; t++)
+		title += *t < 0x80 ? char(*t) : '?';
+	const std::string text = g_ime_next < g_ime_texts.size() ? g_ime_texts[g_ime_next++] : "!";
+	g_ime_cancel = text == "!";
+	if (!g_ime_cancel)
+	{
+		size_t i = 0;
+		for (; i < text.size() && i < p->maxTextLength; i++)
+			p->inputTextBuffer[i] = uint16_t((unsigned char)text[i]);
+		p->inputTextBuffer[i] = 0;
+	}
+	fprintf(stderr, "[host] keyboard \"%s\" (type %d, max %u): %s\n", title.c_str(), p->type, p->maxTextLength,
+		g_ime_cancel ? "canceled" : text.c_str());
+	return 0;
+}
+int sceImeDialogGetStatus(void)
+{
+	if (g_ime_polls < 0)
+		return SCE_IME_DIALOG_STATUS_NONE;
+	return ++g_ime_polls > 3 ? SCE_IME_DIALOG_STATUS_FINISHED : SCE_IME_DIALOG_STATUS_RUNNING;
+}
+int sceImeDialogGetResult(SceImeDialogResult* r)
+{
+	r->endstatus = g_ime_cancel ? SCE_IME_DIALOG_END_STATUS_USER_CANCELED : SCE_IME_DIALOG_END_STATUS_OK;
+	return 0;
+}
+int sceImeDialogTerm(void)
+{
+	g_ime_polls = -1;
+	return 0;
+}
+
+int sceSysmoduleLoadModule(uint16_t id)
+{
+	return id == SCE_SYSMODULE_IME_DIALOG ? 0 : (int)0x805a1000; // not found
+}
+
 int sceSystemServiceHideSplashScreen(void)
 {
 	fprintf(stderr, "[host] splash screen hidden\n");

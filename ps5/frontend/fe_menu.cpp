@@ -14,6 +14,7 @@
 
 #include "OrbisPaths.h"
 #include "ProsperoInput.h"
+#include "ProsperoKeyboard.h"
 #include "ProsperoSce.h"
 #include "ProsperoVideo.h"
 
@@ -22,6 +23,7 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -421,6 +423,16 @@ constexpr const char* kRam = "\xF0\x9F\x96\xAA"; // U+1F5AA
 constexpr const char* kJoystick = "\xF0\x9F\x95\xB9"; // U+1F579
 constexpr const char* kSwap = "\xE2\x86\x94"; // U+2194
 constexpr const char* kInfo = "\xF0\x9F\x9B\x88"; // U+1F6C8
+constexpr const char* kKeyboard = "\xE2\x8C\xA8"; // U+2328
+constexpr const char* kMemo = "\xF0\x9F\x93\x9D"; // U+1F4DD
+constexpr const char* kBallotX = "\xE2\x9C\x97"; // U+2717
+// the cheat search's tests (Roboto's and PromptFont's)
+constexpr const char* kNotEqual = "\xE2\x89\xA0"; // U+2260
+constexpr const char* kMinus = "\xE2\x88\x92"; // U+2212
+constexpr const char* kUp = "\xE2\x86\x91"; // U+2191
+constexpr const char* kDown = "\xE2\x86\x93"; // U+2193
+constexpr const char* kUpDown = "\xE2\x86\x95"; // U+2195
+constexpr const char* kBullet = "\xE2\x80\xA2"; // U+2022
 
 RowIcon SettingIcon(int s)
 {
@@ -485,6 +497,7 @@ enum class Kind
 	Slider, // the volume
 	Page, // opens a page of its own: value >
 	Action, // happens on Cross: value, then the Cross symbol
+	Info, // only shows its value
 };
 
 Kind SettingKind(int s)
@@ -561,7 +574,14 @@ void DrawSettingRow(const SettingRow& r, int y, bool selected)
 		{
 			const int bx = RR - 22 - TextWidthPx(icon::Cross, 30);
 			DrawTextPx(bx, cy - 16, icon::Cross, 30, r.enabled ? kBorder : kDimmed);
-			DrawTextPx(bx - 14 - TextWidthPx(r.value.c_str(), 21), cy - 12, r.value.c_str(), 21, r.enabled ? kHint : kDimmed);
+			const std::string v = FitTextPx(r.value, 21, bx - 14 - (RX + 400));
+			DrawTextPx(bx - 14 - TextWidthPx(v.c_str(), 21), cy - 12, v.c_str(), 21, r.enabled ? kHint : kDimmed);
+			break;
+		}
+		case Kind::Info:
+		{
+			const std::string v = FitTextPx(r.value, 21, RR - 10 - (RX + 400));
+			DrawTextPx(RR - 10 - TextWidthPx(v.c_str(), 21), cy - 12, v.c_str(), 21, value);
 			break;
 		}
 		case Kind::Toggle:
@@ -697,8 +717,9 @@ void DrawRows(const std::vector<SettingRow>& rows, int sel, int& top, int visibl
 	}
 }
 
-void DrawToast(const std::string& text)
+void DrawToast(const std::string& message)
 {
+	const std::string text = FitTextPx(message, 24, PW - 140);
 	const int tw = TextWidthPx(text.c_str(), 24);
 	const int bx = PX + (PW - tw - 60) / 2, by = FY - 74;
 	gfx::FillRoundRect(bx, by, tw + 60, 52, 26, Rgb(58, 47, 176), 240);
@@ -808,27 +829,33 @@ const char* PadName(int pad)
 	return pad >= 0 && pad < N64PS5_PAD_COUNT ? kNames[pad] : "";
 }
 
-// "Reset the game?" over the menu: Square asked for it
-void DrawConfirmReset()
+// a question over the menu ("Reset the game?"): Cross `yes`, Circle `no`
+void DrawConfirm(const RowIcon& ic, const std::string& title, const std::string& text, const char* yes, const char* no)
 {
 	gfx::FillRoundRect(PX + 3, PY + 3, PW - 6, PH - 6, 24, Rgb(5, 4, 18), 150);
-	const int bw = 620, bh = 250, bx = PX + (PW - bw) / 2, by = PY + (PH - bh) / 2;
+	const int bw = 680, bh = 250, bx = PX + (PW - bw) / 2, by = PY + (PH - bh) / 2;
 	gfx::GlowRoundRect(bx, by, bw, bh, 20, 22, kGlow, 150);
 	gfx::GradientRoundRect(bx, by, bw, bh, 20, kPanelTop, kPanelBottom, false);
 	gfx::StrokeRoundRect(bx, by, bw, bh, 20, 2.5f, kBorder);
-	gfx::DrawIcon(gfx::Icon::Restart, bx + 40, by + 38, 50, kIcon);
-	DrawTextPx(bx + 112, by + 40, "Reset the game?", 40, kTitle, false, 1);
-	DrawTextPx(bx + 112, by + 98, "Progress you haven't saved is lost.", 23, kHint);
-	const std::string yes = std::string(icon::Cross), no = std::string(icon::Circle);
+	DrawRowIcon(ic, bx + 40, by + 38, 50, kIcon);
+	DrawTextPx(bx + 112, by + 40, FitTextPx(title, 40, bw - 150).c_str(), 40, kTitle, false, 1);
+	DrawTextPx(bx + 112, by + 98, FitTextPx(text, 23, bw - 150).c_str(), 23, kHint);
+	const std::string cross = std::string(icon::Cross), circle = std::string(icon::Circle);
 	int x = bx + 112;
 	const int y = by + 172;
-	DrawTextPx(x, y - 6, yes.c_str(), 34, kBorder);
-	x += TextWidthPx(yes.c_str(), 34) + 10;
-	DrawTextPx(x, y, "Reset", 24, kLabel);
-	x += TextWidthPx("Reset", 24) + 48;
-	DrawTextPx(x, y - 6, no.c_str(), 34, kBorder);
-	x += TextWidthPx(no.c_str(), 34) + 10;
-	DrawTextPx(x, y, "Cancel", 24, kLabel);
+	DrawTextPx(x, y - 6, cross.c_str(), 34, kBorder);
+	x += TextWidthPx(cross.c_str(), 34) + 10;
+	DrawTextPx(x, y, yes, 24, kLabel);
+	x += TextWidthPx(yes, 24) + 48;
+	DrawTextPx(x, y - 6, circle.c_str(), 34, kBorder);
+	x += TextWidthPx(circle.c_str(), 34) + 10;
+	DrawTextPx(x, y, no, 24, kLabel);
+}
+
+// Square asked for it
+void DrawConfirmReset()
+{
+	DrawConfirm(Drawn(gfx::Icon::Restart), "Reset the game?", "Progress you haven't saved is lost.", "Reset", "Cancel");
 }
 } // namespace pm
 
@@ -851,6 +878,19 @@ void WaitForRelease()
 			return;
 		Present();
 	}
+}
+
+// The touchpad in a page the pause menu opened (Controller Layout, Cheats and the cheat search's pages): straight
+// back to the game. Every page on the way returns, and the pause menu resumes.
+bool g_resume = false;
+
+bool ResumeNow(const Nav& n)
+{
+	if (!emu::GameLoaded())
+		return false; // Settings on the game list
+	if (n.touchpad)
+		g_resume = true;
+	return g_resume;
 }
 
 // What each DualSense control presses on the N64 pad. From Settings (the game list) it is every game's layout;
@@ -905,7 +945,7 @@ void LayoutMenu()
 		}
 		else if (sel == kPads && n.ok)
 			layout = in_game ? cfg.layout : Layout();
-		if (n.back || n.options)
+		if (n.back || n.options || ResumeNow(n))
 		{
 			if (in_game)
 				emu::SetGameLayout(layout);
@@ -1214,61 +1254,710 @@ std::string CheatState(const cheats::Cheat& c)
 	return c.options.empty() ? "On" : c.options[size_t(c.state - 1)].first;
 }
 
-// The running game's cheats: each one off / on, or off / one of its choices, with the database's note under the
-// list.
-void CheatsMenu()
+// a page's picture under its rows: the panel is drawn once (its glow takes a while), then copied back each frame
+class PageBase
 {
-	std::vector<cheats::Cheat>& list = emu::Cheats();
-	const pm::Panel panel{pm::Glyph(pm::kStar), "Cheats", "PAUSED", emu::CheatsGameName(), "",
-		{{icon::Cross, "Change"}, {icon::Circle, "Back"}}, nullptr};
-	const int visible = pm::kVisible - 3; // room for the note
-	NavReader nav;
-	int sel = 0, top = 0;
-	std::vector<uint32_t> base;
-	bool dirty = true;
-	for (;;)
+public:
+	void Draw(const pm::Panel& panel)
 	{
-		if (dirty)
+		if (m_dirty)
 		{
 			pm::DrawPanel(panel);
-			base.assign(ps5video::Surface(), ps5video::Surface() + size_t(W) * H);
-			dirty = false;
+			m_base.assign(ps5video::Surface(), ps5video::Surface() + size_t(W) * H);
+			m_dirty = false;
 		}
 		else
-			memcpy(ps5video::Surface(), base.data(), base.size() * sizeof(uint32_t));
-		std::vector<pm::SettingRow> rows;
-		for (const cheats::Cheat& c : list)
-			rows.push_back({pm::Glyph(pm::kStar), cheats::DisplayName(c.name), false, pm::Kind::Choice, CheatState(c),
-				false, 0, true});
+			memcpy(ps5video::Surface(), m_base.data(), m_base.size() * sizeof(uint32_t));
+	}
+	void Redraw() { m_dirty = true; }
+
+private:
+	std::vector<uint32_t> m_base;
+	bool m_dirty = true;
+};
+
+// a short message over the rows, for a few seconds
+struct Toast
+{
+	std::string text;
+	double until = 0;
+	void Show(const std::string& t, double seconds = 2.5)
+	{
+		text = t;
+		until = Now() + seconds;
+	}
+	void Draw() const
+	{
+		if (!text.empty() && Now() < until)
+			pm::DrawToast(text);
+	}
+};
+
+// The PS5's keyboard over the menu as the screen shows it. The caller starts its NavReader again afterwards: the
+// button that closed the keyboard may still be down.
+bool Keyboard(const std::string& title, std::string& text, int max_chars, ps5keyboard::Type type, std::string* error)
+{
+	return ps5keyboard::Edit(title, text, max_chars, type, [] { Present(); }, error);
+}
+
+// a number typed on the keyboard, at most `max` (more is cut to it, and `error` says so); false when the player
+// canceled it or typed something else
+bool KeyboardNumber(const std::string& title, uint32_t& value, uint32_t max, std::string* error)
+{
+	std::string text = std::to_string(value);
+	if (!Keyboard(title, text, 10, ps5keyboard::Type::Number, error))
+		return false;
+	uint64_t v = 0;
+	bool digits = false;
+	for (const char c : text)
+	{
+		if (c == ' ' || c == ',')
+			continue;
+		if (c < '0' || c > '9')
+		{
+			*error = "\"" + text + "\" is not a number";
+			return false;
+		}
+		v = std::min<uint64_t>(v * 10 + uint64_t(c - '0'), 0xFFFFFFFFFull);
+		digits = true;
+	}
+	if (!digits)
+		return false;
+	if (v > max)
+	{
+		*error = "The most it can be is " + search::Thousands(max);
+		v = max;
+	}
+	value = uint32_t(v);
+	return true;
+}
+
+std::string Trim(const std::string& s)
+{
+	const size_t a = s.find_first_not_of(" \t\r\n");
+	if (a == std::string::npos)
+		return "";
+	return s.substr(a, s.find_last_not_of(" \t\r\n") - a + 1);
+}
+
+// an address of the N64's RAM as cheat codes write it: 0x123456 -> "80123456"
+std::string RamAddress(uint32_t address)
+{
+	char text[16];
+	snprintf(text, sizeof(text), "80%06X", unsigned(address & 0xFFFFFF));
+	return text;
+}
+
+const char* BitsName(int bytes)
+{
+	return bytes == 1 ? "8-bit" : bytes == 2 ? "16-bit" : "32-bit";
+}
+
+// A cheat's own page, its name and codes: a new one (index -1, maybe a copy of one of the list) or one of the
+// player's own (its index in emu::Cheats()), which can be deleted too.
+void EditCheatMenu(int index, cheats::Cheat cheat)
+{
+	const bool is_new = index < 0;
+	const pm::Panel panel{pm::Glyph(pm::kMemo), is_new ? "New Cheat" : "Your Cheat", "PAUSED", "YOUR OWN CHEAT", "",
+		{{icon::Cross, "Confirm"}, {icon::Circle, "Back"}}, nullptr};
+	enum
+	{
+		E_NAME,
+		E_CODES,
+		E_SAVE,
+		E_DELETE,
+	};
+	const int count = is_new ? 3 : 4;
+	const int visible = pm::kVisible - 4; // room for the codes
+	std::string codes = cheats::CodesText(cheat); // as typed: kept when they aren't valid, to fix them
+	std::string problem; // what is wrong with them
+	bool changed = false;
+	int confirm = 0; // 1: leave without saving? 2: delete it?
+	NavReader nav;
+	int sel = 0, top = 0;
+	PageBase page;
+	Toast toast;
+	for (;;)
+	{
+		page.Draw(panel);
+		std::string first = codes.substr(0, codes.find(','));
+		const int more = int(std::count(codes.begin(), codes.end(), ','));
+		if (more)
+			first += " +" + std::to_string(more);
+		std::vector<pm::SettingRow> rows = {
+			{pm::Glyph(pm::kMemo), "Name", false, pm::Kind::Action, cheat.name.empty() ? "Type one" : cheat.name, false, 0,
+				true},
+			{pm::Glyph(pm::kKeyboard), "Codes", false, pm::Kind::Action,
+				!problem.empty() ? "Not valid" : codes.empty() ? "Type them" : first, false, 0, true},
+			{pm::Glyph(pm::kStar), is_new ? "Add the Cheat" : "Save the Changes", false, pm::Kind::Action,
+				is_new ? "Turns it on" : "", false, 0, !cheat.addresses.empty() && problem.empty()},
+		};
+		if (!is_new)
+			rows.push_back({pm::Glyph(pm::kBallotX), "Delete This Cheat", false, pm::Kind::Action, "", false, 0, true});
 		pm::DrawRows(rows, sel, top, visible);
-		const bool has_note = sel < int(list.size()) && !list[size_t(sel)].note.empty();
-		pm::DrawNote(pm::RY0 + visible * pm::RH + 10, has_note ? "ABOUT THIS CHEAT" : "NOTE",
-			has_note ? list[size_t(sel)].note
-					 : "Cheats can make a game misbehave or crash. If one does, turn it off (or reset the game).");
+		pm::DrawNote(pm::RY0 + visible * pm::RH + 10, !problem.empty() ? "CHECK THE CODES" : "CODES",
+			!problem.empty() ? problem
+			: !codes.empty()
+				? codes
+				: "A code is an address (8 hex digits) and a value (4), like 8033B21D 0064. A cheat can have several: "
+				  "type them one after another.");
+		toast.Draw();
+		if (confirm == 1)
+			pm::DrawConfirm(pm::Glyph(pm::kMemo), "Leave without saving?", "What you changed here is lost.", "Leave", "Stay");
+		else if (confirm == 2)
+			pm::DrawConfirm(pm::Glyph(pm::kBallotX), "Delete this cheat?", cheat.name, "Delete", "Keep It");
 		Present();
 
 		const Nav n = nav.Read();
-		pm::MoveSelection(n, sel, int(list.size()));
-		if (sel < int(list.size()) && (n.left || n.right || n.ok))
+		if (confirm)
 		{
-			const cheats::Cheat& c = list[size_t(sel)];
-			emu::SetCheat(sel, (c.state + (n.left ? c.States() - 1 : 1)) % c.States());
+			if (n.ok)
+			{
+				if (confirm == 2)
+					emu::DeleteMyCheat(index);
+				WaitForRelease();
+				return;
+			}
+			if (n.back || n.options)
+				confirm = 0;
+			continue;
 		}
-		if (n.back || n.options)
+		if (n.back || n.options || n.touchpad)
+		{
+			if (changed)
+			{
+				confirm = 1; // the touchpad too: not without asking
+				continue;
+			}
+			ResumeNow(n);
+			WaitForRelease();
+			return;
+		}
+		pm::MoveSelection(n, sel, count);
+		if (!n.ok)
+			continue;
+		std::string error;
+		switch (sel)
+		{
+			case E_NAME:
+			{
+				std::string name = cheat.name;
+				if (Keyboard("Name of the cheat", name, 48, ps5keyboard::Type::Text, &error) && !Trim(name).empty() &&
+					Trim(name) != cheat.name)
+				{
+					cheat.name = Trim(name);
+					changed = true;
+				}
+				nav = NavReader();
+				break;
+			}
+			case E_CODES:
+			{
+				std::string text = codes;
+				if (Keyboard("GameShark codes", text, 1200, ps5keyboard::Type::Latin, &error) && Trim(text) != codes)
+				{
+					codes = Trim(text);
+					changed = true;
+					std::string why;
+					if (codes.empty())
+					{
+						cheat.addresses.clear();
+						cheat.values.clear();
+						problem.clear();
+					}
+					else if (cheats::ParseCodes(codes, cheat, &why))
+					{
+						codes = cheats::CodesText(cheat);
+						problem.clear();
+					}
+					else
+						problem = why;
+				}
+				nav = NavReader();
+				break;
+			}
+			case E_SAVE:
+				if (cheat.addresses.empty() || !problem.empty())
+				{
+					toast.Show(problem.empty() ? "Type its codes first" : "Fix the codes first");
+					break;
+				}
+				if (cheat.name.empty())
+					cheat.name = "My cheat";
+				if (is_new)
+					emu::AddMyCheat(cheat);
+				else
+					emu::UpdateMyCheat(index, cheat);
+				WaitForRelease();
+				return;
+			case E_DELETE: confirm = 2; break;
+		}
+		if (!error.empty())
+			toast.Show(error, 4.0);
+	}
+}
+
+// A cheat from one of the search's results: the value kept where the player wants it while the cheat is on (a
+// GameShark code 80/81 with that value), or just set once. Returns what to tell the player.
+std::string MakeCheatMenu(uint32_t address, int bytes)
+{
+	uint32_t size = 0;
+	const uint32_t* ram = emu::Ram(&size);
+	if (!ram || address >= size)
+		return "";
+	const uint32_t max = search::MaxValue(bytes);
+	uint32_t keep = search::Read(ram, address, bytes);
+	std::string name = "Found " + RamAddress(address);
+	const pm::Panel panel{pm::Glyph(pm::kStar), "New Cheat", "PAUSED", RamAddress(address) + "  " + BitsName(bytes), "",
+		{{icon::Cross, "Confirm"}, {icon::Circle, "Back"}}, nullptr};
+	enum
+	{
+		M_NOW,
+		M_KEEP,
+		M_NAME,
+		M_SAVE,
+		M_SET,
+		M_COUNT
+	};
+	const int visible = pm::kVisible - 4;
+	NavReader nav;
+	int sel = M_KEEP, top = 0;
+	PageBase page;
+	Toast toast;
+	for (;;)
+	{
+		page.Draw(panel);
+		const uint32_t now = search::Read(ram, address, bytes);
+		const std::vector<pm::SettingRow> rows = {
+			{pm::Glyph("#"), "Value Now", false, pm::Kind::Info, search::Thousands(now), false, 0, true},
+			{pm::Glyph(pm::kStar), "Keep It At", false, pm::Kind::Choice, search::Thousands(keep), false, 0, true},
+			{pm::Glyph(pm::kMemo), "Name", false, pm::Kind::Action, name, false, 0, true},
+			{pm::Drawn(gfx::Icon::Download), "Save as a Cheat", false, pm::Kind::Action, "Turns it on", false, 0, true},
+			{pm::Drawn(gfx::Icon::Play), "Set It Once", false, pm::Kind::Action, "Now, not kept", false, 0, true},
+		};
+		pm::DrawRows(rows, sel, top, visible);
+		pm::DrawNote(pm::RY0 + visible * pm::RH + 10, "WHAT IT DOES",
+			"Saved as a cheat, it keeps the value at " + search::Thousands(keep) +
+				" while the cheat is on; you find it in Cheats with the others. Set It Once changes the value now, and "
+				"the game goes on from there. Left and right change the value, Cross types it.");
+		toast.Draw();
+		Present();
+
+		const Nav n = nav.Read();
+		if (n.back || n.options || ResumeNow(n))
+		{
+			WaitForRelease();
+			return "";
+		}
+		pm::MoveSelection(n, sel, M_COUNT);
+		std::string error;
+		if (sel == M_KEEP && (n.left || n.right))
+			keep = n.left ? (keep > 0 ? keep - 1 : 0) : (keep < max ? keep + 1 : max);
+		else if (sel == M_KEEP && n.ok)
+		{
+			KeyboardNumber("The value to keep", keep, max, &error);
+			nav = NavReader();
+		}
+		else if (sel == M_NAME && n.ok)
+		{
+			std::string text = name;
+			if (Keyboard("Name of the cheat", text, 48, ps5keyboard::Type::Text, &error) && !Trim(text).empty())
+				name = Trim(text);
+			nav = NavReader();
+		}
+		else if (sel == M_SAVE && n.ok)
+		{
+			cheats::Cheat c;
+			c.name = name;
+			if (bytes == 4)
+			{
+				// two 16-bit writes: the upper half, then the lower
+				c.addresses = {0x81000000u | address, 0x81000000u | (address + 2)};
+				c.values = {int(keep >> 16), int(keep & 0xFFFF)};
+			}
+			else
+			{
+				c.addresses = {(bytes == 1 ? 0x80000000u : 0x81000000u) | address};
+				c.values = {int(keep & max)};
+			}
+			const int at = emu::AddMyCheat(c);
+			WaitForRelease();
+			return at < 0 ? "" : "Saved and turned on: " + emu::Cheats()[size_t(at)].name;
+		}
+		else if (sel == M_SET && n.ok)
+		{
+			emu::PokeRam(address, keep, bytes);
+			toast.Show("Set to " + search::Thousands(keep));
+		}
+		if (!error.empty())
+			toast.Show(error, 4.0);
+	}
+}
+
+// The addresses still in the search, with their value now and at the last step; Cross makes a cheat of one.
+void ResultsMenu()
+{
+	search::Search& s = emu::CheatSearch();
+	uint32_t size = 0;
+	const uint32_t* ram = emu::Ram(&size);
+	if (!ram || !s.Active())
+		return;
+	const size_t kMax = 300;
+	const std::vector<search::Search::Result> results = s.Results(kMax);
+	const pm::Panel panel{pm::Drawn(gfx::Icon::Search), "Results", "PAUSED", "ADDRESS", "NOW",
+		{{icon::Cross, "Make a Cheat"}, {icon::Circle, "Back"}}, nullptr};
+	const int visible = pm::kVisible - 3;
+	NavReader nav;
+	int sel = 0, top = 0;
+	PageBase page;
+	Toast toast;
+	for (;;)
+	{
+		page.Draw(panel);
+		std::vector<pm::SettingRow> rows;
+		for (const search::Search::Result& r : results)
+		{
+			const uint32_t now = search::Read(ram, r.address, s.Bytes());
+			rows.push_back({pm::Glyph(pm::kRam), RamAddress(r.address), false, pm::Kind::Page,
+				now == r.before ? search::Thousands(now) : search::Thousands(now) + " (was " + search::Thousands(r.before) + ")",
+				false, 0, true});
+		}
+		pm::DrawRows(rows, sel, top, visible);
+		pm::DrawNote(pm::RY0 + visible * pm::RH + 10, "RESULTS",
+			s.Count() > results.size()
+				? "The first " + search::Thousands(results.size()) + " of " + search::Thousands(s.Count()) +
+					  ". Narrow the search down more to see the rest."
+				: "Pick the one that matches what the game shows. If several do, play on and narrow it down more, or "
+				  "try them one by one.");
+		toast.Draw();
+		Present();
+
+		const Nav n = nav.Read();
+		if (n.back || n.options || ResumeNow(n))
 		{
 			WaitForRelease();
 			return;
 		}
+		pm::MoveSelection(n, sel, int(rows.size()));
+		if ((n.ok || n.right) && sel < int(results.size()))
+		{
+			const std::string said = MakeCheatMenu(results[size_t(sel)].address, s.Bytes());
+			if (g_resume)
+				return;
+			if (!said.empty())
+				toast.Show(said, 3.0);
+			nav = NavReader();
+			page.Redraw();
+		}
 	}
 }
 
+// The cheat search (fe_search.h): a size and a value to start from, then a step after each time the player played
+// on, until Results shows few enough addresses to try.
+void SearchMenu()
+{
+	search::Search& s = emu::CheatSearch();
+	static int s_size = 0; // 8, 16, 32-bit; kept while the app runs
+	static uint32_t s_number = 0;
+	static const int kBytes[3] = {1, 2, 4};
+	enum Row
+	{
+		Q_SIZE,
+		Q_NUMBER,
+		Q_START,
+		Q_START_ANY,
+		Q_RESULTS,
+		Q_EQUAL,
+		Q_NOT_EQUAL,
+		Q_UP_BY,
+		Q_DOWN_BY,
+		Q_CHANGED,
+		Q_UNCHANGED,
+		Q_UP,
+		Q_DOWN,
+		Q_UNDO,
+		Q_NEW,
+	};
+	const int visible = pm::kVisible - 3;
+	NavReader nav;
+	int sel = 0, top = 0;
+	bool was_active = !s.Active(); // the panel's headings follow the search
+	pm::Panel panel{};
+	PageBase page;
+	Toast toast;
+	for (;;)
+	{
+		const bool active = s.Active();
+		const int bytes = active ? s.Bytes() : kBytes[s_size];
+		const uint32_t max = search::MaxValue(bytes);
+		s_number = std::min(s_number, max);
+		const std::vector<Row> ids = active
+			? std::vector<Row>{Q_RESULTS, Q_NUMBER, Q_EQUAL, Q_NOT_EQUAL, Q_UP_BY, Q_DOWN_BY, Q_CHANGED, Q_UNCHANGED, Q_UP,
+				  Q_DOWN, Q_UNDO, Q_NEW}
+			: std::vector<Row>{Q_SIZE, Q_NUMBER, Q_START, Q_START_ANY};
+		if (active != was_active)
+		{
+			was_active = active;
+			sel = 0;
+			top = 0;
+			panel = pm::Panel{pm::Drawn(gfx::Icon::Search), "Cheat Search", "PAUSED",
+				active ? std::string(BitsName(bytes)) + " values" : "New search", "",
+				{{icon::Cross, "Confirm"}, {icon::Circle, "Back"}}, nullptr};
+			for (char& c : panel.section)
+				c = char(toupper((unsigned char)c));
+			page.Redraw();
+		}
+		page.Draw(panel);
+		std::vector<pm::SettingRow> rows;
+		for (const Row id : ids)
+		{
+			switch (id)
+			{
+				case Q_SIZE:
+				{
+					static const char* const kSizes[3] = {"8-bit (0-255)", "16-bit (0-65535)", "32-bit"};
+					rows.push_back({pm::Glyph(pm::kRam), "Value Size", false, pm::Kind::Choice, kSizes[s_size], false, 0, true});
+					break;
+				}
+				case Q_NUMBER:
+					rows.push_back({pm::Glyph("#"), "Value", false, pm::Kind::Choice, search::Thousands(s_number), false, 0, true});
+					break;
+				case Q_START:
+					rows.push_back({pm::Drawn(gfx::Icon::Search), "Search for the Value", false, pm::Kind::Action, "", false, 0, true});
+					break;
+				case Q_START_ANY:
+					rows.push_back({pm::Drawn(gfx::Icon::Search), "Search Without a Value", false, pm::Kind::Action,
+						"Bars, timers", false, 0, true});
+					break;
+				case Q_RESULTS:
+					rows.push_back({pm::Glyph(pm::kRam), "Results", false, pm::Kind::Page, search::Thousands(s.Count()) + " left",
+						false, 0, s.Count() > 0});
+					break;
+				case Q_EQUAL: rows.push_back({pm::Glyph("="), "Is the Value", false, pm::Kind::Action, "", false, 0, true}); break;
+				case Q_NOT_EQUAL:
+					rows.push_back({pm::Glyph(pm::kNotEqual), "Is Not the Value", false, pm::Kind::Action, "", false, 0, true});
+					break;
+				case Q_UP_BY:
+					rows.push_back({pm::Glyph("+"), "Went Up by the Value", false, pm::Kind::Action, "", false, 0, true});
+					break;
+				case Q_DOWN_BY:
+					rows.push_back({pm::Glyph(pm::kMinus), "Went Down by the Value", false, pm::Kind::Action, "", false, 0, true});
+					break;
+				case Q_CHANGED:
+					rows.push_back({pm::Glyph(pm::kUpDown), "Changed", false, pm::Kind::Action, "", false, 0, true});
+					break;
+				case Q_UNCHANGED:
+					rows.push_back({pm::Glyph(pm::kBullet), "Didn't Change", false, pm::Kind::Action, "", false, 0, true});
+					break;
+				case Q_UP: rows.push_back({pm::Glyph(pm::kUp), "Went Up", false, pm::Kind::Action, "", false, 0, true}); break;
+				case Q_DOWN: rows.push_back({pm::Glyph(pm::kDown), "Went Down", false, pm::Kind::Action, "", false, 0, true}); break;
+				case Q_UNDO:
+					rows.push_back({pm::Drawn(gfx::Icon::Restart), "Undo the Last Step", false, pm::Kind::Action, "", false, 0,
+						s.CanUndo()});
+					break;
+				case Q_NEW:
+					rows.push_back({pm::Glyph(pm::kBallotX), "New Search", false, pm::Kind::Action, "", false, 0, true});
+					break;
+			}
+		}
+		pm::DrawRows(rows, sel, top, visible);
+		pm::DrawNote(pm::RY0 + visible * pm::RH + 10, "HOW IT WORKS",
+			active ? "Play until the value changes in the game, pause, and pick here what happened to it. Do that a few "
+					 "times; when only a few are left, open Results."
+				   : "Set the value the game shows (3 lives: 3) and search for it, or search without one for things with "
+					 "no number, like a health bar. 8-bit fits most counters.");
+		toast.Draw();
+		Present();
 
+		const Nav n = nav.Read();
+		if (n.back || n.options || ResumeNow(n))
+		{
+			WaitForRelease();
+			return;
+		}
+		pm::MoveSelection(n, sel, int(ids.size()));
+		if (!(n.left || n.right || n.ok))
+			continue;
+		const Row id = ids[size_t(sel)];
+		uint32_t ram_size = 0;
+		const uint32_t* ram = emu::Ram(&ram_size);
+		std::string error;
+		auto step = [&](search::Test test) {
+			if (!n.ok || !ram)
+				return;
+			const uint64_t before = s.Count();
+			s.Filter(ram, test, s_number);
+			const uint64_t left = s.Count();
+			OrbisLog("[cheats] search step %d: %llu -> %llu", s.Steps(), (unsigned long long)before, (unsigned long long)left);
+			toast.Show(left == 0  ? "None left: undo the last step, or start again"
+					   : left <= 50 ? search::Thousands(left) + " left: open Results"
+									: search::Thousands(left) + " left: play on, then narrow it down",
+				3.0);
+		};
+		switch (id)
+		{
+			case Q_SIZE: s_size = (s_size + (n.left ? 2 : 1)) % 3; break;
+			case Q_NUMBER:
+				if (n.ok)
+				{
+					KeyboardNumber("The value", s_number, max, &error);
+					nav = NavReader();
+				}
+				else
+					s_number = n.left ? (s_number > 0 ? s_number - 1 : 0) : (s_number < max ? s_number + 1 : max);
+				break;
+			case Q_START:
+			case Q_START_ANY:
+				if (n.ok && ram)
+				{
+					s.Start(ram, ram_size, kBytes[s_size]);
+					OrbisLog("[cheats] search: %s values, %u KiB of RAM%s", BitsName(s.Bytes()), unsigned(ram_size >> 10),
+						id == Q_START ? ", for the value" : "");
+					if (id == Q_START)
+						step(search::Test::Equal);
+					else
+						toast.Show(search::Thousands(s.Count()) + " values: play until it changes", 3.0);
+				}
+				break;
+			case Q_RESULTS:
+				if ((n.ok || n.right) && s.Count() > 0)
+				{
+					ResultsMenu();
+					if (g_resume)
+						return;
+					nav = NavReader();
+					page.Redraw();
+				}
+				break;
+			case Q_EQUAL: step(search::Test::Equal); break;
+			case Q_NOT_EQUAL: step(search::Test::NotEqual); break;
+			case Q_UP_BY: step(search::Test::IncreasedBy); break;
+			case Q_DOWN_BY: step(search::Test::DecreasedBy); break;
+			case Q_CHANGED: step(search::Test::Changed); break;
+			case Q_UNCHANGED: step(search::Test::Unchanged); break;
+			case Q_UP: step(search::Test::Increased); break;
+			case Q_DOWN: step(search::Test::Decreased); break;
+			case Q_UNDO:
+				if (n.ok && s.Undo())
+					toast.Show("Back one step: " + search::Thousands(s.Count()) + " left");
+				break;
+			case Q_NEW:
+				if (n.ok)
+					s.Clear();
+				break;
+		}
+		if (!error.empty())
+			toast.Show(error, 4.0);
+	}
+}
+
+// The running game's cheats: the cheat search, codes to type in, the player's own cheats and then the database's,
+// each one off / on, or off / one of its choices; what to know about the one chosen under the list.
+void CheatsMenu()
+{
+	enum
+	{
+		C_SEARCH,
+		C_TYPE,
+		C_FIRST, // the cheats
+	};
+	const std::string game = emu::CheatsGameName();
+	const pm::Panel panel{pm::Glyph(pm::kStar), "Cheats", "PAUSED", game.empty() ? emu::GameName() : game, "",
+		{{icon::Cross, "Change"}, {icon::Square, "Edit"}, {icon::Circle, "Back"}}, nullptr};
+	const int visible = pm::kVisible - 3; // room for the note
+	NavReader nav;
+	int sel = 0, top = 0;
+	PageBase page;
+	for (;;)
+	{
+		std::vector<cheats::Cheat>& list = emu::Cheats();
+		const int count = C_FIRST + int(list.size());
+		sel = std::min(sel, count - 1);
+		page.Draw(panel);
+		const search::Search& s = emu::CheatSearch();
+		std::vector<pm::SettingRow> rows = {
+			{pm::Drawn(gfx::Icon::Search), "Search for a Cheat", false, pm::Kind::Page,
+				s.Active() ? search::Thousands(s.Count()) + " left" : "Start one", false, 0, true},
+			{pm::Glyph(pm::kKeyboard), "Type In Codes", false, pm::Kind::Page, "GameShark", false, 0, true},
+		};
+		for (const cheats::Cheat& c : list)
+			rows.push_back({pm::Glyph(c.mine ? pm::kMemo : pm::kStar), cheats::DisplayName(c.name), false, pm::Kind::Choice,
+				CheatState(c), false, 0, true});
+		pm::DrawRows(rows, sel, top, visible);
+		const int note_y = pm::RY0 + visible * pm::RH + 10;
+		if (sel == C_SEARCH)
+			pm::DrawNote(note_y, "CHEAT SEARCH",
+				"Find where the game keeps a number, like your lives or health, and make a cheat that keeps it where you "
+				"want. You play, then tell the search what happened to the number, a few times over.");
+		else if (sel == C_TYPE)
+			pm::DrawNote(note_y, "YOUR OWN CODES",
+				"Type GameShark codes with the PS5 keyboard, like 8033B21D 0064. Your cheats are kept in "
+				"/data/mupen64plus/cheats, where you can also put them from a PC.");
+		else
+		{
+			const cheats::Cheat& c = list[size_t(sel - C_FIRST)];
+			if (c.mine)
+				pm::DrawNote(note_y, "YOUR CHEAT", "Codes: " + cheats::CodesText(c) + ". Square renames it, changes its codes or deletes it.");
+			else
+				pm::DrawNote(note_y, c.note.empty() ? "NOTE" : "ABOUT THIS CHEAT",
+					c.note.empty() ? "Cheats can make a game misbehave or crash. If one does, turn it off (or reset the "
+									 "game). Square makes a copy of it you can change."
+								   : c.note);
+		}
+		Present();
+
+		const Nav n = nav.Read();
+		if (n.back || n.options || ResumeNow(n))
+		{
+			WaitForRelease();
+			return;
+		}
+		pm::MoveSelection(n, sel, count);
+		if (n.square && sel >= C_FIRST)
+		{
+			cheats::Cheat copy = list[size_t(sel - C_FIRST)];
+			if (copy.mine)
+				EditCheatMenu(sel - C_FIRST, copy);
+			else
+			{
+				// the database's stays as it is: the copy is the player's own
+				copy.name = emu::UniqueCheatName(cheats::DisplayName(copy.name) + " (edited)");
+				copy.mine = true;
+				EditCheatMenu(-1, copy);
+			}
+			if (g_resume)
+				return;
+			nav = NavReader();
+			page.Redraw();
+			continue;
+		}
+		if (!(n.left || n.right || n.ok))
+			continue;
+		if (sel == C_SEARCH || sel == C_TYPE)
+		{
+			if (n.left)
+				continue;
+			if (sel == C_SEARCH)
+				SearchMenu();
+			else
+				EditCheatMenu(-1, cheats::Cheat());
+			if (g_resume)
+				return;
+			nav = NavReader();
+			page.Redraw();
+			continue;
+		}
+		const cheats::Cheat& c = list[size_t(sel - C_FIRST)];
+		emu::SetCheat(sel - C_FIRST, (c.state + (n.left ? c.States() - 1 : 1)) % c.States());
+	}
+}
 } // namespace
 
 PauseAction PauseMenu()
 {
 	Settings& cfg = Config();
 	NavReader nav;
+	g_resume = false;
 	// the rows: an S_* setting by its number, or one of these
 	enum
 	{
@@ -1320,8 +2009,7 @@ PauseAction PauseMenu()
 				for (const cheats::Cheat& c : emu::Cheats())
 					on += c.state ? 1 : 0;
 				snprintf(text, sizeof(text), "%d on", on);
-				return {pm::Glyph(pm::kStar), "Cheats", false, pm::Kind::Page,
-					emu::Cheats().empty() ? "None for this game" : on ? text : "Off", false, 0, !emu::Cheats().empty()};
+				return {pm::Glyph(pm::kStar), "Cheats", false, pm::Kind::Page, on ? text : "Off", false, 0, true};
 			}
 			case R_QUIT:
 				return {pm::Glyph(pm::kDoor), "Quit Mupen64Plus", false, pm::Kind::Action, "Close the app", false, 0, true};
@@ -1404,9 +2092,11 @@ PauseAction PauseMenu()
 			case R_SLOT: cfg.state_slot = (cfg.state_slot + (dir < 0 ? 9 : 1)) % 10; break;
 			case R_SPEED: emu::SetFastForward(!emu::FastForward()); break;
 			case R_CHEATS:
-				if (dir > 0 && !emu::Cheats().empty())
+				if (dir > 0)
 				{
 					CheatsMenu();
+					if (g_resume)
+						return PauseAction::Resume;
 					nav = NavReader();
 					dirty = true;
 				}
@@ -1420,6 +2110,8 @@ PauseAction PauseMenu()
 				const int s = ids[size_t(sel)];
 				ChangeSetting(s, dir);
 				cfg.Save();
+				if (g_resume)
+					return PauseAction::Resume; // the touchpad in Controller Layout
 				if (s == S_LAYOUT)
 					nav = NavReader();
 				dirty = true; // the picture (aspect, filters) or a page drawn over it

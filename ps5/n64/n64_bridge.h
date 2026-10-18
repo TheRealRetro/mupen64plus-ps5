@@ -125,6 +125,14 @@ void n64ps5_input_set_options(const n64ps5_input_options* opt);
 // buttons.
 void n64ps5_input_block(bool block);
 
+// ---- the N64's RAM (core/memory_ps5.c), for the cheat search ---------------------------------------------
+// The RDRAM as the core keeps it: 32-bit words in the host's byte order (byte n of the N64's memory is byte
+// n ^ 3 here). `size` gets its size, 4 or 8 MiB (the Expansion Pak).
+const uint32_t* n64ps5_ram(uint32_t* size);
+// Writes `value` (`bytes` 1, 2 or 4, at an address of that alignment) the way a cheat code does, so recompiled
+// code there is dropped too.
+void n64ps5_ram_write(uint32_t address, uint32_t value, int bytes);
+
 #ifdef __cplusplus
 }
 #endif

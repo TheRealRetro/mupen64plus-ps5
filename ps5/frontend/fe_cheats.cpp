@@ -175,6 +175,154 @@ std::vector<Cheat> ForGame(uint32_t crc1, uint32_t crc2, uint8_t country, std::s
 	return out;
 }
 
+std::vector<Cheat> Parse(const std::string& text)
+{
+	std::vector<Cheat> out;
+	size_t at = 0;
+	while (at < text.size())
+	{
+		size_t end = text.find('\n', at);
+		if (end == std::string::npos)
+			end = text.size();
+		std::string line = text.substr(at, end - at);
+		at = end + 1;
+		while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t'))
+			line.pop_back();
+		size_t lead = 0;
+		while (lead < line.size() && (line[lead] == ' ' || line[lead] == '\t'))
+			lead++;
+		line.erase(0, lead);
+		if (line.empty() || line[0] == '#' || line.compare(0, 4, "crc ") == 0 || line.compare(0, 3, "gn ") == 0)
+			continue;
+		if (line.compare(0, 3, "cn ") == 0)
+		{
+			out.emplace_back();
+			out.back().name = line.substr(3);
+			out.back().mine = true;
+		}
+		else if (!out.empty() && line.compare(0, 3, "cd ") == 0)
+			out.back().note = line.substr(3);
+		else if (!out.empty())
+			ParseCode(line, out.back());
+	}
+	std::vector<Cheat> usable;
+	for (Cheat& c : out)
+		if (!c.name.empty() && Usable(c))
+			usable.push_back(std::move(c));
+	return usable;
+}
+
+std::string Format(const std::vector<Cheat>& list)
+{
+	std::string out = "# Mupen64Plus PS5: your own cheats for this game, in the format of mupen64plus's cheat list.\n"
+					  "# A cheat is a \" cn name\" line, then its codes: an address and a value, \"8033B21D 0064\".\n";
+	for (const Cheat& c : list)
+	{
+		out += " cn " + c.name + "\n";
+		if (!c.note.empty())
+			out += "  cd " + c.note + "\n";
+		char code[24];
+		bool listed = false; // a cheat with choices lists them on its first "????" line
+		for (size_t i = 0; i < c.addresses.size(); i++)
+		{
+			if (c.values[i] >= 0)
+				snprintf(code, sizeof(code), "  %08X %04X", unsigned(c.addresses[i]), unsigned(c.values[i] & 0xFFFF));
+			else
+				snprintf(code, sizeof(code), "  %08X ????", unsigned(c.addresses[i]));
+			out += code;
+			if (c.values[i] < 0 && !listed)
+			{
+				listed = true;
+				for (size_t k = 0; k < c.options.size(); k++)
+				{
+					snprintf(code, sizeof(code), "%s%04X:", k ? "," : " ", unsigned(c.options[k].second & 0xFFFF));
+					out += code + ("\"" + c.options[k].first + "\"");
+				}
+			}
+			out += "\n";
+		}
+	}
+	return out;
+}
+
+bool ParseCodes(const std::string& text, Cheat& c, std::string* error)
+{
+	std::vector<std::string> tokens;
+	std::string cur;
+	for (const char ch : text + " ")
+	{
+		if (ch == ' ' || ch == ',' || ch == '\n' || ch == '\r' || ch == '\t' || ch == ';' || ch == ':' || ch == '+')
+		{
+			if (!cur.empty())
+				tokens.push_back(cur);
+			cur.clear();
+		}
+		else
+			cur += ch;
+	}
+	auto hex = [](const std::string& t, size_t max) {
+		if (t.empty() || t.size() > max)
+			return false;
+		for (const char ch : t)
+			if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')))
+				return false;
+		return true;
+	};
+	Cheat out;
+	for (size_t i = 0, step = 2; i < tokens.size(); i += step)
+	{
+		// "8033B21D0064" as one token is a code too
+		std::string address = tokens[i], value = i + 1 < tokens.size() ? tokens[i + 1] : "";
+		step = 2;
+		if (address.size() == 12 && hex(address, 12))
+		{
+			value = address.substr(8);
+			address.resize(8);
+			step = 1;
+		}
+		if (address.size() != 8 || !hex(address, 8) || !hex(value, 4))
+		{
+			if (error)
+				*error = "\"" + tokens[i] + (value.empty() ? "" : " " + value) +
+						 "\" is not a code: a code is 8 hex digits and 4 more, like 8033B21D 0064";
+			return false;
+		}
+		out.addresses.push_back(uint32_t(strtoul(address.c_str(), nullptr, 16)));
+		out.values.push_back(int(strtol(value.c_str(), nullptr, 16)));
+	}
+	if (out.addresses.empty())
+	{
+		if (error)
+			*error = "No codes: type them like 8033B21D 0064";
+		return false;
+	}
+	if (NeedsGameSharkButton(out))
+	{
+		if (error)
+			*error = "Codes starting 88, 89, A8, A9 or D8 to DB need the GameShark's button, which a DualSense hasn't got";
+		return false;
+	}
+	c.addresses = std::move(out.addresses);
+	c.values = std::move(out.values);
+	c.options.clear();
+	return true;
+}
+
+std::string CodesText(const Cheat& c)
+{
+	std::string out;
+	char code[24];
+	for (size_t i = 0; i < c.addresses.size(); i++)
+	{
+		int v = c.values[i];
+		if (v < 0)
+			v = c.options.empty() ? 0 : c.options[size_t(c.state > 0 ? c.state - 1 : 0)].second;
+		snprintf(code, sizeof(code), "%s%08X %04X", out.empty() ? "" : ", ", unsigned(c.addresses[i]), unsigned(v & 0xFFFF));
+		out += code;
+	}
+	return out;
+}
+
 std::string DisplayName(const std::string& name)
 {
 	std::string s = name;

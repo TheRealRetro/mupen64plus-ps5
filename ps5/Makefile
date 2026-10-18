@@ -96,7 +96,7 @@ CORE_SRC := \
 CORE_SUB_SRC := md5/md5.c minizip/ioapi.c minizip/unzip.c minizip/zip.c
 # the port's side of the core (C)
 N64_SRC := n64/sdl/sdl_shim.c n64/core/perf.c n64/core/jit_ps5.c n64/core/vidext_ps5.c n64/core/eventloop_ps5.c n64/core/screenshot_ps5.c \
-	n64/core/osal_dynlib_static.c
+	n64/core/osal_dynlib_static.c n64/core/memory_ps5.c
 # the plugins
 PLUGIN_C_SRC := n64/plugins/rsp_cxd4_ps5.c n64/plugins/rsp_hle_ps5.c n64/plugins/gfx_ps5.c
 PLUGIN_CXX_SRC := n64/plugins/audio_ps5.cpp n64/plugins/input_ps5.cpp
@@ -121,9 +121,11 @@ EMU_SRC := coreorbis/main-boot.cpp \
 	coreorbis/orbis-shims/ProsperoVideo.cpp coreorbis/orbis-shims/ProsperoAudio.cpp \
 	coreorbis/orbis-shims/ProsperoInput.cpp coreorbis/orbis-shims/ProsperoJailbreak.cpp \
 	coreorbis/orbis-shims/ProsperoCrash.cpp coreorbis/orbis-shims/ProsperoUpdateJob.cpp \
+	coreorbis/orbis-shims/ProsperoKeyboard.cpp \
 	frontend/fe_emu.cpp frontend/fe_menu.cpp frontend/fe_settings.cpp frontend/fe_text.cpp \
 	frontend/fe_games.cpp frontend/fe_http.cpp frontend/fe_covers.cpp frontend/fe_shelf.cpp \
-	frontend/fe_prefetch.cpp frontend/fe_update.cpp frontend/fe_cheats.cpp frontend/fe_draw.cpp
+	frontend/fe_prefetch.cpp frontend/fe_update.cpp frontend/fe_cheats.cpp frontend/fe_draw.cpp \
+	frontend/fe_search.cpp
 # the payloads: the helper, and the installer (= helper + install)
 HELPER_SRC := coreorbis/orbis-shims/orbis_paths.cpp coreorbis/orbis-shims/ProsperoNotify.cpp \
 	coreorbis/orbis-shims/ProsperoHelper.cpp coreorbis/orbis-shims/ProsperoUpdateJob.cpp

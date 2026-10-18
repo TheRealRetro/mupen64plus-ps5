@@ -42,6 +42,7 @@ enum class Icon
 	Screen, // a rectangle
 	Gauge,
 	Download,
+	Search, // a magnifying glass
 };
 void DrawIcon(Icon icon, int x, int y, int size, uint32_t color);
 } // namespace gfx
