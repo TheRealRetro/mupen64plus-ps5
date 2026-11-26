@@ -414,8 +414,10 @@ constexpr const char* kStar = "\xE2\x98\x85"; // U+2605
 constexpr const char* kLaptop = "\xF0\x9F\x92\xBB"; // U+1F4BB
 constexpr const char* kSpeaker = "\xF0\x9F\x94\x88"; // U+1F508
 constexpr const char* kNotes = "\xF0\x9F\x8E\xB6"; // U+1F3B6
+#ifdef N64PS5_VULKAN
 constexpr const char* kCube = "\xE2\xAC\x9B"; // U+2B1B
 constexpr const char* kResize = "\xF0\x9F\x96\xB5"; // U+1F5B5
+#endif
 constexpr const char* kChip = "\xF0\x9F\x96\xA5"; // U+1F5A5
 constexpr const char* kHeadphones = "\xF0\x9F\x8E\xA7"; // U+1F3A7
 constexpr const char* kGears = "\xE2\x9A\x99"; // U+2699
